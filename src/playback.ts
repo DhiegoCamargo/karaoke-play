@@ -21,15 +21,16 @@ export class YouTubePlayback implements Playback {
   private p: any
   private active = false
   private rate = 1
-  constructor(elId: string, private ev: Events) {
+  constructor(elId: string, private ev: Events, private onIframeReady?: (iframe: HTMLIFrameElement) => void, private onVideoPlaying?: () => void) {
     loadYT().then(YT => {
       this.p = new YT.Player(elId, {
         width: '100%', height: '100%', playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
         events: {
+          onReady: (e: any) => { const frame = e.target?.getIframe?.(); if (frame) this.onIframeReady?.(frame) },
           onStateChange: (e: any) => {
             if (!this.active) return
             if (e.data === 0) ev.ended()
-            else if (e.data === 1) { ev.playing(); this.applyRate() }
+            else if (e.data === 1) { ev.playing(); this.applyRate(); this.onVideoPlaying?.() }
             else if (e.data === 2) ev.paused()
           },
           onError: (e: any) => {

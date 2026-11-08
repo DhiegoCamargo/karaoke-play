@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload } from 'lucide-react'
 import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
+import { KpTomBridge, type KpTomStatus } from './kpTomBridge'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
@@ -52,6 +53,9 @@ export default function App() {
   const files = useRef(new Map<string, File>())
   const fileIn = useRef<HTMLInputElement>(null)
   const [source, setSource] = useState<'youtube' | 'file' | 'library'>('youtube')
+  const bridge = useRef<KpTomBridge | null>(null)
+  const [extensionStatus, setExtensionStatus] = useState<KpTomStatus>('idle')
+  const [extensionMessage, setExtensionMessage] = useState('')
   const [tone, setTone] = useState(0)
   const [speed, setSpeed] = useState(1)
   const [keep, setKeep] = useState(false)
@@ -60,6 +64,8 @@ export default function App() {
   const phaseRef = useRef(phase); phaseRef.current = phase
   const queueRef = useRef(queue); queueRef.current = queue
   const setRef = useRef(settings); setRef.current = settings
+  const toneRef = useRef(0)
+  const sourceRef = useRef(source); sourceRef.current = source
   const finishRef = useRef(() => {})
   const startRef = useRef(() => {})
 
@@ -77,10 +83,25 @@ export default function App() {
       error: m => { setNote(m); setPhase('ERROR') },
       blocked: () => setPhase('AUTOPLAY_BLOCKED'),
     }
-    yt.current = new YouTubePlayback('yt', ev)
+    const ext = new KpTomBridge()
+    bridge.current = ext
+    ext.subscribe((status, _state, info) => { setExtensionStatus(status); if (info) setExtensionMessage(info) })
+    yt.current = new YouTubePlayback('yt', ev, (iframe) => {
+      ext.attach(iframe)
+      // A extensão comunica a presença a partir do iframe já carregado.
+      void ext.detect()
+    }, () => {
+      // Retoma a configuração após o carregamento de outro vídeo do YouTube.
+      if (sourceRef.current === 'youtube') void ext.setPitch(toneRef.current)
+    })
     local.current = new LocalPlayback(vid.current, ev)
   }, [])
-  useEffect(() => { player.current?.setPitch(tone); player.current?.setRate(speed) }, [tone, speed, source, current?.id])
+  useEffect(() => {
+    toneRef.current = tone
+    player.current?.setPitch(tone)
+    player.current?.setRate(speed)
+    if (source === 'youtube' && current) void bridge.current?.setPitch(tone)
+  }, [tone, speed, source, current?.id])
   // libera os File que não estão mais na fila nem tocando
   useEffect(() => {
     const live = new Set<string>(queue.map(q => q.id))
@@ -258,11 +279,17 @@ export default function App() {
           {!party && current && (
             <div className="mt-3 space-y-2 rounded-xl bg-white/5 p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2"><b className="w-20">Tom</b>
-                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(t => Math.max(-12, t - 1))} aria-label="Diminuir um semitom">−</button>
+                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(t => Math.max(-12, t - 1))} aria-label="Diminuir um semitom">−</button>
                 <span className="w-12 text-center text-xl font-bold text-fuchsia-300">{tone > 0 ? '+' : ''}{tone}</span>
-                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(t => Math.min(12, t + 1))} aria-label="Aumentar um semitom">+</button>
-                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(0)}>Restaurar</button></div>
-              {source === 'youtube' && <p className="text-white/60">Tom indisponível no YouTube (a API oficial só controla velocidade). Use a extensão opcional Transpose ou o modo MP4 local.</p>}
+                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(t => Math.min(12, t + 1))} aria-label="Aumentar um semitom">+</button>
+                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(0)}>Restaurar</button></div>
+              {source === 'youtube' && (
+                <div className="space-y-1 text-white/70">
+                  <p>KP Tom: {extensionStatus === 'ready' ? 'conectada' : extensionStatus === 'denied' ? 'site não autorizado nas opções da extensão' : extensionStatus === 'detecting' ? 'procurando extensão…' : 'não detectada (tom indisponível)'}</p>
+                  {extensionStatus !== 'ready' && <button className={btn} onClick={() => void bridge.current?.detect()}>Verificar extensão</button>}
+                  {extensionStatus === 'error' && extensionMessage && <p className="text-amber-300">{extensionMessage}</p>}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2"><b className="w-20">Velocidade</b>
                 <input type="range" min={0.5} max={1.5} step={0.05} value={speed} onChange={e => setSpeed(+e.target.value)} className="min-w-0 flex-1" aria-label="Velocidade" />
                 <span className="w-14 text-center">{speed.toFixed(2)}×</span>
@@ -291,7 +318,7 @@ export default function App() {
           <aside className="space-y-3">
             <nav className="flex gap-2">
               {tabBtn('queue', <ListMusic size={20} />, 'Fila')}{tabBtn('rank', <Trophy size={20} />, 'Ranking')}{tabBtn('hist', <History size={20} />, 'Histórico')}
-              {tabBtn('cfg', <Cog size={20} />, 'Configurações')}{tabBtn('help', <HelpCircle size={20} />, 'Ajuda Transpose')}
+              {tabBtn('cfg', <Cog size={20} />, 'Configurações')}{tabBtn('help', <HelpCircle size={20} />, 'Ajuda KP Tom')}
             </nav>
             {tab === 'queue' && (
               <div className="space-y-2">
@@ -349,9 +376,9 @@ export default function App() {
             )}
             {tab === 'help' && (
               <div className="space-y-2 text-sm text-white/80">
-                <p>Para mudar tom e velocidade, instale a extensão opcional <b>Transpose — Pitch &amp; Speed</b> no Chrome (desktop) e use os controles dela na própria página.</p>
-                <a className="text-fuchsia-300 underline" target="_blank" rel="noreferrer" href="https://chromewebstore.google.com/detail/transpose-pitch-%E2%96%B8-speed-%E2%96%B8/ioimlbgefgadofblnajllknopjboejda?hl=pt-BR">Página da extensão</a>
-                <p>O Karaokê Play não controla a extensão nem altera o áudio. A compatibilidade com o player incorporado e a troca de vídeos ainda precisa ser testada na prática.</p>
+                <p>O modo YouTube pode usar a extensão experimental <b>KP Tom</b> para controlar a tonalidade diretamente pelos botões do Karaokê Play.</p>
+                <p>Nas opções da extensão, autorize a origem exata deste site e recarregue a página. O modo MP4 continua com SoundTouch integrado, sem extensão.</p>
+                <p>Este é um teste experimental para o navegador Chrome em computador.</p>
               </div>
             )}
           </aside>
