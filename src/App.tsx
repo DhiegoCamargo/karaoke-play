@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X } from 'lucide-react'
-import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, loadYT, searchYT, oembed } from './lib'
+import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload } from 'lucide-react'
+import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed } from './lib'
+import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
 const SCORE_READ_MS = 5000
+const LOCAL_THUMB = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="56"><rect width="96" height="56" fill="#2b1163"/><text x="48" y="34" font-size="22" text-anchor="middle" fill="#e879f9">MP4</text></svg>')
 const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)]
 const cheer = (n: number) => pick(n >= 95 ? ['Você arrasou no palco!', 'Nota de estrela!'] : n >= 85 ? ['Que apresentação!', 'O público foi à loucura!'] : ['Boa! Quem canta seus males espanta!', 'Divertido demais, bora de novo!'])
 
@@ -43,7 +45,16 @@ export default function App() {
   const [note, setNote] = useState('')
   const [party, setParty] = useState(false)
 
-  const player = useRef<any>(null)
+  const player = useRef<Playback | null>(null)
+  const yt = useRef<YouTubePlayback | null>(null)
+  const local = useRef<LocalPlayback | null>(null)
+  const vid = useRef<HTMLVideoElement>(null)
+  const files = useRef(new Map<string, File>())
+  const fileIn = useRef<HTMLInputElement>(null)
+  const [source, setSource] = useState<'youtube' | 'file' | 'library'>('youtube')
+  const [tone, setTone] = useState(0)
+  const [speed, setSpeed] = useState(1)
+  const [keep, setKeep] = useState(false)
   const scored = useRef('')
   const tok = useRef(0)
   const phaseRef = useRef(phase); phaseRef.current = phase
@@ -58,33 +69,35 @@ export default function App() {
   useEffect(() => save('kp:singer', singer), [singer])
 
   useEffect(() => {
-    let dead = false
-    loadYT().then(YT => {
-      if (dead) return
-      player.current = new YT.Player('yt', {
-        width: '100%', height: '100%', playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
-        events: {
-          onStateChange: (e: any) => {
-            if (e.data === 0) finishRef.current()
-            else if (e.data === 1) setPhase('PLAYING')
-            else if (e.data === 2 && phaseRef.current === 'PLAYING') setPhase('PAUSED')
-          },
-          onError: (e: any) => {
-            setNote([101, 150].includes(e.data) ? 'Este vídeo não permite incorporação.' : [100].includes(e.data) ? 'Vídeo removido ou privado.' : 'Erro ao reproduzir o vídeo.')
-            setPhase('ERROR')
-          },
-          onAutoplayBlocked: () => setPhase('AUTOPLAY_BLOCKED'),
-        },
-      })
-    }).catch(() => { setNote('Falha ao carregar o player do YouTube.'); setPhase('ERROR') })
-    return () => { dead = true }
+    if (yt.current || !vid.current) return // adaptadores criados uma única vez (também no StrictMode)
+    const ev: Events = {
+      ended: () => finishRef.current(),
+      playing: () => setPhase('PLAYING'),
+      paused: () => { if (phaseRef.current === 'PLAYING') setPhase('PAUSED') },
+      error: m => { setNote(m); setPhase('ERROR') },
+      blocked: () => setPhase('AUTOPLAY_BLOCKED'),
+    }
+    yt.current = new YouTubePlayback('yt', ev)
+    local.current = new LocalPlayback(vid.current, ev)
   }, [])
+  useEffect(() => { player.current?.setPitch(tone); player.current?.setRate(speed) }, [tone, speed, source, current?.id])
+  // libera os File que não estão mais na fila nem tocando
+  useEffect(() => {
+    const live = new Set<string>(queue.map(q => q.id))
+    if (current && ['LOADING', 'PLAYING', 'PAUSED', 'AUTOPLAY_BLOCKED'].includes(phase)) live.add(current.id)
+    files.current.forEach((_, id) => { if (!live.has(id)) files.current.delete(id) })
+  }, [queue, current, phase])
 
   const play = (s: Song) => {
-    if (!player.current?.loadVideoById) { setNote('Player ainda carregando. Tente de novo em instantes.'); setQueue(x => [s, ...x]); return }
+    const kind = s.source ?? 'youtube'
+    const pb = kind === 'youtube' ? yt.current : local.current
+    if (!pb?.ready()) { setNote('Player ainda carregando. Tente de novo em instantes.'); setQueue(x => [s, ...x]); return }
     const my = ++tok.current
-    setCurrent(s); setScore(null); setNote(''); setPhase('LOADING')
-    player.current.loadVideoById(s.videoId)
+    ;(pb === yt.current ? local.current : yt.current)?.stop()
+    player.current = pb
+    setSource(kind); setCurrent(s); setScore(null); setNote(''); setPhase('LOADING')
+    if (!keep) { setTone(0); setSpeed(1) }
+    pb.load(s, kind === 'file' ? files.current.get(s.id) : s.url)
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
   }
   startRef.current = () => {
@@ -95,6 +108,7 @@ export default function App() {
   finishRef.current = () => {
     if (!current || scored.current === current.id) return // evita pontuação duplicada
     scored.current = current.id
+    player.current?.stop() // interrompe a mídia antes da nota (vale também para o encerramento manual); eventos do adaptador passam a ser ignorados
     const s = setRef.current
     const sc = s.scoring ? rollScore(s.min, s.max) : null
     setScore(sc)
@@ -132,20 +146,28 @@ export default function App() {
       }
     } catch (e: any) { setNote(e.message) } finally { setBusy(false) }
   }
-  const add = (r: Result) => {
+  const add = (r: Result & { source?: Song['source']; fileName?: string }, file?: File) => {
     const name = singer.trim()
     if (!name) { setNote('Digite o nome de quem vai cantar (campo no topo).'); return }
+    if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
     if ([...queue, ...(current ? [current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
     const s: Song = { ...r, id: crypto.randomUUID(), singer: name }
-    if (phase === 'IDLE' && !current && player.current?.loadVideoById) play(s)
+    if (file) files.current.set(s.id, file)
+    const pb = (s.source ?? 'youtube') === 'youtube' ? yt.current : local.current
+    if (phase === 'IDLE' && !current && pb?.ready()) play(s)
     else setQueue(x => [...x, s])
     setNote(`"${r.title}" adicionada para ${name}.`)
+  }
+  const onFiles = (list: FileList | null) => { // um arquivo por vez (evita estado defasado entre adições)
+    const f = list?.[0]
+    if (f) add({ videoId: `file:${f.name}:${f.size}`, title: f.name.replace(/\.[^.]+$/, ''), channel: 'Arquivo local', thumb: LOCAL_THUMB, source: 'file', fileName: f.name }, f)
+    if (fileIn.current) fileIn.current.value = ''
   }
   const move = (i: number, d: number) => setQueue(x => { const a = [...x], j = i + d; if (j < 0 || j >= a.length) return x; [a[i], a[j]] = [a[j], a[i]]; return a })
   const playNow = (i: number) => { const s = queue[i]; setQueue(x => x.filter((_, k) => k !== i)); play(s) }
   const resetSession = () => {
     if (!confirm('Reiniciar sessão? Fila, ranking e histórico serão apagados.')) return
-    tok.current++; player.current?.stopVideo?.()
+    tok.current++; yt.current?.stop(); local.current?.stop()
     setQueue([]); setHistory([]); setCurrent(null); setScore(null); setPhase('IDLE')
   }
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings(s => ({ ...s, [k]: v }))
@@ -182,7 +204,7 @@ export default function App() {
         </div>
       </Ov>
     ) : phase === 'AUTOPLAY_BLOCKED' ? (
-      <Ov><p className="text-xl">O navegador bloqueou o início automático.</p><button className={primary} onClick={() => player.current?.playVideo()}>▶ Iniciar música</button></Ov>
+      <Ov><p className="text-xl">O navegador bloqueou o início automático.</p><button className={primary} onClick={() => player.current?.play()}>▶ Iniciar música</button></Ov>
     ) : phase === 'ERROR' ? (
       <Ov><p className="text-lg text-red-300">{note || 'Erro no player.'}</p>{nextUp ? <button className={primary} onClick={() => startRef.current()}>Pular para a próxima</button> : <p className="text-white/60">Escolha outra música.</p>}</Ov>
     ) : phase === 'IDLE' && current ? (
@@ -209,6 +231,8 @@ export default function App() {
               className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
             <button className={primary} aria-label="Pesquisar"><Search size={20} /></button>
           </form>
+          <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
+          <button className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com tom e velocidade)"><Upload size={20} /></button>
           <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={20} /></button>
           <button className={btn} onClick={() => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()} aria-label="Tela cheia"><Maximize size={20} /></button>
         </header>
@@ -216,7 +240,8 @@ export default function App() {
       <main className={party ? 'mx-auto max-w-[1600px] p-4' : 'grid gap-4 p-3 lg:grid-cols-[1fr_380px]'}>
         <section className="min-w-0">
           <div className="relative aspect-video overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40">
-            <div className="absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full"><div id="yt" /></div>
+            <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
+            <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p></Ov>}
             {overlay}
           </div>
@@ -226,10 +251,26 @@ export default function App() {
               <p className="truncate text-white/70">{current ? `Cantor(a): ${current.singer}` : ''}</p>
               <p className="truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>
             </div>
-            {current && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pauseVideo() : player.current?.playVideo()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
+            {current && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
             {current && (phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Encerrar música" onClick={() => finishRef.current()}><SkipForward /></button>}
             {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa"><X /></button>}
           </div>
+          {!party && current && (
+            <div className="mt-3 space-y-2 rounded-xl bg-white/5 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2"><b className="w-20">Tom</b>
+                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(t => Math.max(-12, t - 1))} aria-label="Diminuir um semitom">−</button>
+                <span className="w-12 text-center text-xl font-bold text-fuchsia-300">{tone > 0 ? '+' : ''}{tone}</span>
+                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(t => Math.min(12, t + 1))} aria-label="Aumentar um semitom">+</button>
+                <button className={btn} disabled={source === 'youtube'} onClick={() => setTone(0)}>Restaurar</button></div>
+              {source === 'youtube' && <p className="text-white/60">Tom indisponível no YouTube (a API oficial só controla velocidade). Use a extensão opcional Transpose ou o modo MP4 local.</p>}
+              <div className="flex flex-wrap items-center gap-2"><b className="w-20">Velocidade</b>
+                <input type="range" min={0.5} max={1.5} step={0.05} value={speed} onChange={e => setSpeed(+e.target.value)} className="min-w-0 flex-1" aria-label="Velocidade" />
+                <span className="w-14 text-center">{speed.toFixed(2)}×</span>
+                <button className={btn} onClick={() => setSpeed(1)}>Restaurar</button></div>
+              {source === 'youtube' && <p className="text-white/60">No YouTube vale o valor permitido mais próximo.</p>}
+              <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={keep} onChange={e => setKeep(e.target.checked)} />Manter tom e velocidade na próxima música</label>
+            </div>
+          )}
           {!party && note && phase !== 'ERROR' && <p role="status" className="mt-2 rounded-lg bg-fuchsia-500/10 p-2 text-sm">{note}</p>}
           {!party && results.length > 0 && (
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
