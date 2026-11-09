@@ -5,6 +5,7 @@ import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './pl
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
+type QueueResult = Result & { source?: Song['source']; fileName?: string }
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
 const SCORE_READ_MS = 5000
 const LOCAL_THUMB = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="56"><rect width="96" height="56" fill="#2b1163"/><text x="48" y="34" font-size="22" text-anchor="middle" fill="#e879f9">MP4</text></svg>')
@@ -27,11 +28,11 @@ function Counter({ n, anim }: { n: number; anim: boolean }) {
 const btn = 'rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
 const primary = 'rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
 
-function SingerModal({ title, thumb, initial, suggestions, onConfirm, onCancel }: {
-  title: string; thumb: string; initial: string; suggestions: string[]
+function SingerModal({ title, thumb, suggestions, onConfirm, onCancel }: {
+  title: string; thumb: string; suggestions: string[]
   onConfirm: (name: string) => void; onCancel: () => void
 }) {
-  const [name, setName] = useState(initial)
+  const [name, setName] = useState('')
   const ref = useRef<HTMLInputElement>(null)
   useEffect(() => { ref.current?.focus(); ref.current?.select() }, [])
   useEffect(() => {
@@ -75,7 +76,9 @@ export default function App() {
   const [history, setHistory] = useState<HistoryItem[]>(() => load('kp:history', []))
   const [singer, setSinger] = useState<string>(() => load('kp:singer', ''))
   const [current, setCurrent] = useState<Song | null>(null)
-  const [phase, setPhase] = useState<Phase>('IDLE')
+  const [phase, updatePhase] = useState<Phase>('IDLE')
+  const phaseRef = useRef<Phase>('IDLE')
+  const setPhase = (next: Phase) => { phaseRef.current = next; updatePhase(next) }
   const [score, setScore] = useState<number | null>(null)
   const [left, setLeft] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -87,8 +90,9 @@ export default function App() {
   const [empty, setEmpty] = useState(false) // a última pesquisa não encontrou nada
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
+  const [playbackError, setPlaybackError] = useState('')
   const [party, setParty] = useState(false)
-  const [pending, setPending] = useState<Result | null>(null) // resultado aguardando a confirmação do cantor
+  const [pending, setPending] = useState<{ result: QueueResult; file?: File } | null>(null)
   const lastTerm = useRef('') // consulta efetiva da última pesquisa: "Mais resultados" usa esta, não o campo de texto
   const searchSeq = useRef(0) // descarta respostas de pesquisas ultrapassadas
 
@@ -108,15 +112,22 @@ export default function App() {
   const [tone, setTone] = useState(0)
   const [speed, setSpeed] = useState(1)
   const [keep, setKeep] = useState(false)
-  const scored = useRef('')
+  const activeSong = useRef<Song | null>(null)
   const tok = useRef(0)
-  const phaseRef = useRef(phase); phaseRef.current = phase
   const queueRef = useRef(queue); queueRef.current = queue
   const setRef = useRef(settings); setRef.current = settings
   const toneRef = useRef(0)
   const sourceRef = useRef(source); sourceRef.current = source
   const finishRef = useRef(() => {})
   const startRef = useRef(() => {})
+  const failRef = useRef((_message: string) => {})
+
+  const stopPresentation = () => {
+    activeSong.current = null
+    tok.current++
+    player.current?.stop()
+    player.current = null
+  }
 
   useEffect(() => save('kp:settings', settings), [settings])
   useEffect(() => save('kp:queue', queue), [queue])
@@ -127,10 +138,10 @@ export default function App() {
     if (yt.current || !vid.current) return // adaptadores criados uma única vez (também no StrictMode)
     const ev: Events = {
       ended: () => finishRef.current(),
-      playing: () => setPhase('PLAYING'),
+      playing: () => { if (activeSong.current) setPhase('PLAYING') },
       paused: () => { if (phaseRef.current === 'PLAYING') setPhase('PAUSED') },
-      error: m => { setNote(m); setPhase('ERROR') },
-      blocked: () => setPhase('AUTOPLAY_BLOCKED'),
+      error: m => failRef.current(m),
+      blocked: () => { if (activeSong.current) setPhase('AUTOPLAY_BLOCKED') },
     }
     const ext = new KpTomBridge()
     bridge.current = ext
@@ -168,47 +179,72 @@ export default function App() {
   const play = (s: Song) => {
     const kind = s.source ?? 'youtube'
     const pb = kind === 'youtube' ? yt.current : local.current
-    if (!pb?.ready()) { setNote('Player ainda carregando. Tente de novo em instantes.'); setQueue(x => [s, ...x]); return }
-    const my = ++tok.current
-    ;(pb === yt.current ? local.current : yt.current)?.stop()
+    if (!pb?.ready()) {
+      setNote('O player ainda não está disponível. Tente novamente em instantes.')
+      return false
+    }
+    stopPresentation()
+    const my = tok.current
+    activeSong.current = s
     player.current = pb
     setSource(kind); setCurrent(s); setScore(null); setNote(''); setPhase('LOADING')
-    if (!keep) { setTone(0); setSpeed(1) }
+    if (!keep) { toneRef.current = 0; setTone(0); setSpeed(1) }
+    pb.setPitch(keep ? tone : 0)
+    pb.setRate(keep ? speed : 1)
     pb.load(s, kind === 'file' ? files.current.get(s.id) : s.url)
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
+    return true
   }
   startRef.current = () => {
     const [n, ...rest] = queueRef.current
     if (!n) { setCurrent(null); setPhase('IDLE'); return }
-    setQueue(rest); play(n)
+    if (play(n)) setQueue(rest)
+    else setPhase('IDLE')
+  }
+  const advance = () => {
+    if (queueRef.current.length && setRef.current.autoplay) {
+      setLeft(setRef.current.countdown)
+      setPaused(false)
+      setPhase('COUNTDOWN')
+    } else setPhase('IDLE')
+  }
+  const skip = () => {
+    if (!activeSong.current) return
+    stopPresentation()
+    advance()
+  }
+  failRef.current = message => {
+    if (!activeSong.current) return
+    stopPresentation()
+    setPlaybackError(message)
+    setPhase('ERROR')
   }
   finishRef.current = () => {
-    if (!current || scored.current === current.id) return // evita pontuação duplicada
-    scored.current = current.id
-    player.current?.stop() // interrompe a mídia antes da nota (vale também para o encerramento manual); eventos do adaptador passam a ser ignorados
+    const completed = activeSong.current
+    if (!completed) return
+    stopPresentation()
     const s = setRef.current
     const sc = s.scoring ? rollScore(s.min, s.max) : null
     setScore(sc)
-    setHistory(h => [{ ...current, score: sc, at: Date.now() }, ...h].slice(0, 200))
+    setHistory(h => [{ ...completed, score: sc, at: Date.now() }, ...h].slice(0, 200))
     setPhase('SCORING')
   }
 
   // SCORING -> COUNTDOWN (tempo mínimo de leitura da nota)
   useEffect(() => {
     if (phase !== 'SCORING') return
-    const t = setTimeout(() => {
-      if (queueRef.current.length && setRef.current.autoplay) { setLeft(setRef.current.countdown); setPaused(false); setPhase('COUNTDOWN') }
-      else setPhase('IDLE')
-    }, SCORE_READ_MS)
+    const t = setTimeout(advance, SCORE_READ_MS)
     return () => clearTimeout(t)
   }, [phase])
   // COUNTDOWN: um único timer por vez
   useEffect(() => {
-    if (phase !== 'COUNTDOWN' || paused) return
+    if (phase !== 'COUNTDOWN') return
+    if (!queue.length || !settings.autoplay) { setPhase('IDLE'); return }
+    if (paused) return
     if (left <= 0) { startRef.current(); return }
     const t = setTimeout(() => setLeft(l => l - 1), 1000)
     return () => clearTimeout(t)
-  }, [phase, paused, left])
+  }, [phase, paused, left, queue.length, settings.autoplay])
 
   const doSearch = async (next?: string) => {
     const raw = q.trim()
@@ -237,28 +273,24 @@ export default function App() {
       }
     } catch (e: any) { if (my === searchSeq.current) setNote(e.message) } finally { if (my === searchSeq.current) setBusy(false) }
   }
-  const add = (r: Result & { source?: Song['source']; fileName?: string }, file?: File, nameOverride?: string) => {
-    const name = (nameOverride ?? singer).trim()
-    if (!name) { setNote('Digite o nome de quem vai cantar (campo no topo).'); return }
+  const add = (r: QueueResult, name: string, file?: File) => {
     if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
-    if ([...queue, ...(current ? [current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
+    if ([...queue, ...(activeSong.current ? [activeSong.current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
     const s: Song = { ...r, id: crypto.randomUUID(), singer: name }
     if (file) files.current.set(s.id, file)
-    const pb = (s.source ?? 'youtube') === 'youtube' ? yt.current : local.current
-    if (phase === 'IDLE' && !current && pb?.ready()) play(s)
-    else setQueue(x => [...x, s])
+    setQueue(x => [...x, s])
     setNote(`"${r.title}" adicionada para ${name}.`)
   }
   const onFiles = (list: FileList | null) => { // um arquivo por vez (evita estado defasado entre adições)
     const f = list?.[0]
-    if (f) add({ videoId: `file:${f.name}:${f.size}`, title: f.name.replace(/\.[^.]+$/, ''), channel: 'Arquivo local', thumb: LOCAL_THUMB, source: 'file', fileName: f.name }, f)
+    if (f) setPending({ result: { videoId: `file:${f.name}:${f.size}`, title: f.name.replace(/\.[^.]+$/, ''), channel: 'Arquivo local', thumb: LOCAL_THUMB, source: 'file', fileName: f.name }, file: f })
     if (fileIn.current) fileIn.current.value = ''
   }
   const move = (i: number, d: number) => setQueue(x => { const a = [...x], j = i + d; if (j < 0 || j >= a.length) return x; [a[i], a[j]] = [a[j], a[i]]; return a })
-  const playNow = (i: number) => { const s = queue[i]; setQueue(x => x.filter((_, k) => k !== i)); play(s) }
+  const playNow = (i: number) => { const s = queue[i]; if (s && play(s)) setQueue(x => x.filter(item => item.id !== s.id)) }
   const resetSession = () => {
     if (!confirm('Reiniciar sessão? Fila, ranking e histórico serão apagados.')) return
-    tok.current++; yt.current?.stop(); local.current?.stop()
+    stopPresentation()
     setQueue([]); setHistory([]); setCurrent(null); setScore(null); setPhase('IDLE')
   }
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setSettings(s => ({ ...s, [k]: v }))
@@ -276,16 +308,16 @@ export default function App() {
   const singers = useMemo(() => {
     const seen = new Set<string>(), out: string[] = []
     const push = (n?: string) => { const t = n?.trim(); if (!t || seen.has(t.toLowerCase())) return; seen.add(t.toLowerCase()); out.push(t) }
-    history.forEach(h => push(h.singer)); push(current?.singer); queue.forEach(x => push(x.singer))
+    push(singer); history.forEach(h => push(h.singer)); push(current?.singer); queue.forEach(x => push(x.singer))
     return out.slice(0, 8)
-  }, [history, current, queue])
+  }, [singer, history, current, queue])
   const cancelPending = () => setPending(null)
   const confirmSinger = (raw: string) => {
     const typed = raw.trim().slice(0, 24)
     if (!pending || !typed) return
     const name = singers.find(n => n.toLowerCase() === typed.toLowerCase()) ?? typed // mantém a grafia já usada no ranking
     setSinger(name) // vira o "último nome" da próxima vez
-    add(pending, undefined, name)
+    add(pending.result, name, pending.file)
     setPending(null)
   }
 
@@ -306,15 +338,15 @@ export default function App() {
         <div className="h-2 w-64 overflow-hidden rounded bg-white/10"><div className="h-full bg-fuchsia-500 transition-all duration-1000 ease-linear" style={{ width: `${(left / settings.countdown) * 100}%` }} /></div>
         <div className="flex flex-wrap justify-center gap-2">
           <button className={btn} onClick={() => setPaused(p => !p)}>{paused ? 'Continuar' : 'Pausar'}</button>
-          <button className={primary} onClick={() => setLeft(0)}>Pular contagem</button>
+          <button className={primary} onClick={() => startRef.current()}>Pular contagem</button>
           <button className={btn} onClick={() => { setPaused(true); setParty(false); setTab('queue') }}>Voltar à fila</button>
           <button className={btn} onClick={() => setPhase('IDLE')}>Cancelar</button>
         </div>
       </Ov>
     ) : phase === 'AUTOPLAY_BLOCKED' ? (
-      <Ov><p className="text-xl">O navegador bloqueou o início automático.</p><button className={primary} onClick={() => player.current?.play()}>▶ Iniciar música</button></Ov>
+      <Ov><p className="text-xl">A música ainda não começou. Tente iniciar a reprodução ou avance para a próxima.</p><button className={primary} onClick={() => player.current?.play()}>▶ Iniciar música</button><button className={btn} onClick={skip}>Pular música</button></Ov>
     ) : phase === 'ERROR' ? (
-      <Ov><p className="text-lg text-red-300">{note || 'Erro no player.'}</p>{nextUp ? <button className={primary} onClick={() => startRef.current()}>Pular para a próxima</button> : <p className="text-white/60">Escolha outra música.</p>}</Ov>
+      <Ov><p className="text-lg text-red-300">{playbackError}</p>{nextUp ? <button className={primary} onClick={() => startRef.current()}>Pular para a próxima</button> : <p className="text-white/60">Escolha outra música.</p>}</Ov>
     ) : phase === 'IDLE' && current ? (
       <Ov>
         <p className="text-2xl font-bold">{nextUp ? 'Pronto para o próximo?' : 'Sessão encerrada'}</p>
@@ -350,7 +382,7 @@ export default function App() {
           <div className="relative aspect-video overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40">
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
-            {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p></Ov>}
+            {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p>{nextUp && <button className={primary} onClick={() => startRef.current()}>Iniciar karaokê</button>}</Ov>}
             {overlay}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -359,8 +391,8 @@ export default function App() {
               <p className="truncate text-white/70">{current ? `Cantor(a): ${current.singer}` : ''}</p>
               <p className="truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>
             </div>
-            {current && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
-            {current && (phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Encerrar música" onClick={() => finishRef.current()}><SkipForward /></button>}
+            {(phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
+            {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" onClick={skip}><SkipForward /></button>}
             {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa"><X /></button>}
           </div>
           {!party && current && (
@@ -406,7 +438,7 @@ export default function App() {
                 <div key={r.videoId} className={row}>
                   <img src={r.thumb} alt="" className="h-14 w-24 rounded object-cover" />
                   <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-semibold">{r.title}</p><p className="truncate text-xs text-white/60">{r.channel}</p></div>
-                  <button className={`${primary} flex shrink-0 items-center gap-1 px-3 py-2 text-sm`} onClick={() => setPending(r)} aria-label={`Quero essa: ${r.title}`}><Mic size={16} />Quero essa</button>
+                  <button className={`${primary} flex shrink-0 items-center gap-1 px-3 py-2 text-sm`} onClick={() => setPending({ result: r })} aria-label={`Quero essa: ${r.title}`}><Mic size={16} />Quero essa</button>
                 </div>
               ))}
               {more && <button className={btn} disabled={busy} onClick={() => doSearch(more)}>{busy ? 'Carregando…' : 'Mais resultados'}</button>}
@@ -429,7 +461,7 @@ export default function App() {
                   <div key={s.id} className={row}>
                     <img src={s.thumb} alt="" className="h-12 w-20 rounded object-cover" />
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{i + 1}. {s.title}</p><p className="truncate text-xs text-violet-300">{s.singer}</p></div>
-                    <button aria-label="Tocar agora" title="Tocar agora" className="p-1" onClick={() => playNow(i)}><Play size={18} /></button>
+                    {current && <button aria-label="Tocar agora" title="Tocar agora" className="p-1" onClick={() => playNow(i)}><Play size={18} /></button>}
                     <button aria-label="Subir" className="p-1" onClick={() => move(i, -1)}><ArrowUp size={18} /></button>
                     <button aria-label="Descer" className="p-1" onClick={() => move(i, 1)}><ArrowDown size={18} /></button>
                     <button aria-label="Remover" className="p-1" onClick={() => setQueue(x => x.filter(k => k.id !== s.id))}><Trash2 size={18} /></button>
@@ -456,7 +488,7 @@ export default function App() {
                 {history.map(h => (
                   <div key={h.id} className={row}>
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{h.singer}: {h.title}</p><p className="text-xs text-white/60">{new Date(h.at).toLocaleTimeString('pt-BR')} · nota {h.score ?? '—'}</p></div>
-                    <button aria-label="Adicionar de novo" className="p-1" onClick={() => add(h)}><Plus size={18} /></button>
+                    <button aria-label="Adicionar de novo" className="p-1" onClick={() => setPending({ result: h })}><Plus size={18} /></button>
                   </div>
                 ))}
               </div>
@@ -487,7 +519,7 @@ export default function App() {
           </aside>
         )}
       </main>
-      {pending && <SingerModal title={pending.title} thumb={pending.thumb} initial={singer} suggestions={singers} onConfirm={confirmSinger} onCancel={cancelPending} />}
+      {pending && <SingerModal title={pending.result.title} thumb={pending.result.thumb} suggestions={singers} onConfirm={confirmSinger} onCancel={cancelPending} />}
     </div>
   )
 }
