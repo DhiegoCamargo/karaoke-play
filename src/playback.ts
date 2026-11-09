@@ -49,11 +49,15 @@ export class YouTubePlayback implements Playback {
   stop() { this.active = false; this.p?.stopVideo?.() }
   setPitch() { /* não existe API oficial de tom */ }
   setRate(r: number) { this.rate = r; this.applyRate() }
-  private applyRate() { // a API só aceita as taxas de getAvailablePlaybackRates
+  /** Valor que a API realmente aceita para o pedido r (o mais próximo de getAvailablePlaybackRates). */
+  effectiveRate(r: number): number {
+    const av: number[] = this.p?.getAvailablePlaybackRates?.() ?? [1]
+    return av.reduce((a, b) => (Math.abs(b - r) < Math.abs(a - r) ? b : a), 1)
+  }
+  private applyRate() {
     const p = this.p
     if (!p?.setPlaybackRate) return
-    const av: number[] = p.getAvailablePlaybackRates?.() ?? [1]
-    const n = av.reduce((a, b) => (Math.abs(b - this.rate) < Math.abs(a - this.rate) ? b : a), 1)
+    const n = this.effectiveRate(this.rate)
     if (p.getPlaybackRate?.() !== n) p.setPlaybackRate(n)
   }
 }

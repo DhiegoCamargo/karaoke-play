@@ -43,6 +43,8 @@ export class KpTomBridge {
   private seq = 0
   private pending = new Map<number, (m: Msg) => void>()
   private listeners = new Set<Listener>()
+  warning = '' // aviso não fatal (ex.: demora na resposta); não desabilita os controles
+  private lastDetect = 0
 
   constructor() {
     window.addEventListener('message', this.onMessage)
@@ -58,7 +60,10 @@ export class KpTomBridge {
     return () => this.listeners.delete(fn)
   }
 
-  async detect(timeoutMs = 1500): Promise<boolean> {
+  // force=true: tentativa manual/inicial. force=false: chamadas automáticas respeitam 5 s de intervalo quando a extensão não responde.
+  async detect(timeoutMs = 1500, force = true): Promise<boolean> {
+    if (!force && this.status !== 'ready' && Date.now() - this.lastDetect < 5000) return false
+    this.lastDetect = Date.now()
     this.set('detecting')
     try {
       const r = await this.request({ type: 'ping' }, timeoutMs)
@@ -71,18 +76,25 @@ export class KpTomBridge {
   }
 
   async setPitch(semitones: number): Promise<boolean> {
-    if (this.status !== 'ready' && !(await this.detect())) return false
-    try {
-      const r = await this.request({ type: 'setPitch', semitones: Math.max(-12, Math.min(12, Math.round(semitones))) }, 4000)
-      if (r.type === 'error') {
-        this.set('error', r.message)
-        return false
+    if (this.status !== 'ready' && !(await this.detect(1500, false))) return false
+    const v = Math.max(-12, Math.min(12, Math.round(semitones)))
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await this.request({ type: 'setPitch', semitones: v }, 4000)
+        if (r.type === 'error') { this.setWarning(r.message ?? 'Erro da extensão.'); return false }
+        this.setWarning('')
+        return true
+      } catch {
+        // tenta mais uma vez; se falhar, mantém 'ready' (a extensão já respondia) e apenas avisa
+        if (attempt === 1) this.setWarning('A extensão demorou a responder; o tom pode não ter sido aplicado. Tente de novo.')
       }
-      return true
-    } catch (e) {
-      this.set('absent', (e as Error).message)
-      return false
     }
+    return false
+  }
+
+  private setWarning(m: string) {
+    this.warning = m
+    this.emit()
   }
 
   dispose() {
@@ -135,6 +147,6 @@ export class KpTomBridge {
   }
 
   private emit(info?: string) {
-    this.listeners.forEach((fn) => fn(this.status, this.state, info))
+    this.listeners.forEach((fn) => fn(this.status, this.state, info ?? (this.warning || undefined)))
   }
 }

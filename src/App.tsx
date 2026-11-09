@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload } from 'lucide-react'
 import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
-import { KpTomBridge, type KpTomStatus } from './kpTomBridge'
+import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
@@ -56,6 +56,9 @@ export default function App() {
   const bridge = useRef<KpTomBridge | null>(null)
   const [extensionStatus, setExtensionStatus] = useState<KpTomStatus>('idle')
   const [extensionMessage, setExtensionMessage] = useState('')
+  const [extState, setExtState] = useState<KpTomState | null>(null)
+  const [, setTick] = useState(0) // força novo render quando o YouTube informa as velocidades disponíveis
+  const diagOpen = useRef(false)
   const [tone, setTone] = useState(0)
   const [speed, setSpeed] = useState(1)
   const [keep, setKeep] = useState(false)
@@ -85,23 +88,30 @@ export default function App() {
     }
     const ext = new KpTomBridge()
     bridge.current = ext
-    ext.subscribe((status, _state, info) => { setExtensionStatus(status); if (info) setExtensionMessage(info) })
+    ext.subscribe((status, st, info) => {
+      setExtensionStatus(status)
+      setExtensionMessage(info ?? '')
+      // atualiza o diagnóstico só com o painel aberto ou quando um alerta muda (evita render por segundo)
+      setExtState(prev => (diagOpen.current || prev?.needsActivation !== st?.needsActivation || prev?.lastError !== st?.lastError ? st : prev))
+    })
     yt.current = new YouTubePlayback('yt', ev, (iframe) => {
       ext.attach(iframe)
       // A extensão comunica a presença a partir do iframe já carregado.
       void ext.detect()
     }, () => {
       // Retoma a configuração após o carregamento de outro vídeo do YouTube.
+      setTick(t => t + 1)
       if (sourceRef.current === 'youtube') void ext.setPitch(toneRef.current)
     })
     local.current = new LocalPlayback(vid.current, ev)
   }, [])
+  // Tom e velocidade em efeitos separados: mexer na velocidade não reenvia o tom à extensão.
   useEffect(() => {
     toneRef.current = tone
     player.current?.setPitch(tone)
-    player.current?.setRate(speed)
     if (source === 'youtube' && current) void bridge.current?.setPitch(tone)
-  }, [tone, speed, source, current?.id])
+  }, [tone, source, current?.id])
+  useEffect(() => { player.current?.setRate(speed) }, [speed, source, current?.id])
   // libera os File que não estão mais na fila nem tocando
   useEffect(() => {
     const live = new Set<string>(queue.map(q => q.id))
@@ -201,6 +211,7 @@ export default function App() {
   }, [history])
   const msg = useMemo(() => (score != null ? cheer(score) : ''), [score])
   const nextUp = queue[0]
+  const shownSpeed = source === 'youtube' ? (yt.current?.effectiveRate(speed) ?? speed) : speed // valor realmente aplicado
 
   const overlay =
     phase === 'SCORING' ? (
@@ -287,14 +298,28 @@ export default function App() {
                 <div className="space-y-1 text-white/70">
                   <p>KP Tom: {extensionStatus === 'ready' ? 'conectada' : extensionStatus === 'denied' ? 'site não autorizado nas opções da extensão' : extensionStatus === 'detecting' ? 'procurando extensão…' : 'não detectada (tom indisponível)'}</p>
                   {extensionStatus !== 'ready' && <button className={btn} onClick={() => void bridge.current?.detect()}>Verificar extensão</button>}
-                  {extensionStatus === 'error' && extensionMessage && <p className="text-amber-300">{extensionMessage}</p>}
+                  {(extensionStatus === 'absent' || extensionStatus === 'denied') && <p>Sem a KP Tom, o tom no YouTube só muda pelo Transpose (controles da própria extensão) ou no modo MP4 local.</p>}
+                  {extensionStatus === 'ready' && extensionMessage && <p className="text-amber-300">{extensionMessage}</p>}
+                  {extensionStatus === 'ready' && extState?.needsActivation && <p className="text-amber-300">O áudio do player precisa de ativação: clique uma vez no vídeo para o tom valer.</p>}
+                  {extensionStatus === 'ready' && extState?.lastError && <p className="text-amber-300">Extensão: {extState.lastError}</p>}
+                  <details onToggle={e => { diagOpen.current = (e.currentTarget as HTMLDetailsElement).open }}>
+                    <summary className="cursor-pointer">Diagnóstico da extensão</summary>
+                    <pre className="mt-1 overflow-x-auto whitespace-pre-wrap text-xs">{extState ? [
+                      `status: ${extensionStatus} · versão ${extState.version}`,
+                      `origem do site: ${extState.parentOrigin ?? 'n/d'} (${extState.allowed ? 'autorizada' : 'NÃO autorizada'})`,
+                      `áudio: ${extState.context ? `${extState.context.state} · ${extState.context.sampleRate} Hz · base ${extState.context.baseLatencyMs} ms` : 'sem contexto'}`,
+                      `grafo: ${extState.graph} · worklet: ${extState.worklet}`,
+                      `tom pedido: ${extState.semitones} · medido: ${extState.measured ? `${extState.measured.semitones} (r=${extState.measured.corr})` : 'n/d'}`,
+                      `latência do processador: ${extState.processorLatencyMs ?? 'n/d'} ms · anúncio: ${extState.adShowing ? 'sim' : 'não'}`,
+                    ].join('\n') : 'Sem dados (extensão não conectada ou painel recém-aberto).'}</pre>
+                  </details>
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-2"><b className="w-20">Velocidade</b>
-                <input type="range" min={0.5} max={1.5} step={0.05} value={speed} onChange={e => setSpeed(+e.target.value)} className="min-w-0 flex-1" aria-label="Velocidade" />
-                <span className="w-14 text-center">{speed.toFixed(2)}×</span>
+                <input type="range" min={0.5} max={1.5} step={source === 'youtube' ? 0.25 : 0.05} value={speed} onChange={e => setSpeed(+e.target.value)} className="min-w-0 flex-1" aria-label="Velocidade" />
+                <span className="w-14 text-center">{shownSpeed.toFixed(2)}×</span>
                 <button className={btn} onClick={() => setSpeed(1)}>Restaurar</button></div>
-              {source === 'youtube' && <p className="text-white/60">No YouTube vale o valor permitido mais próximo.</p>}
+              {source === 'youtube' && <p className="text-white/60">No YouTube só valem as velocidades que o player oferece; o valor mostrado é o aplicado.</p>}
               <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={keep} onChange={e => setKeep(e.target.checked)} />Manter tom e velocidade na próxima música</label>
             </div>
           )}
@@ -379,6 +404,7 @@ export default function App() {
                 <p>O modo YouTube pode usar a extensão experimental <b>KP Tom</b> para controlar a tonalidade diretamente pelos botões do Karaokê Play.</p>
                 <p>Nas opções da extensão, autorize a origem exata deste site e recarregue a página. O modo MP4 continua com SoundTouch integrado, sem extensão.</p>
                 <p>Este é um teste experimental para o navegador Chrome em computador.</p>
+                <p>Sem a KP Tom, use a extensão Transpose (controles dela na própria página) ou o modo MP4 local.</p>
               </div>
             )}
           </aside>
