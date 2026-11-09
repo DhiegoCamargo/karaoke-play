@@ -44,17 +44,83 @@ export async function oembed(id: string): Promise<Result> {
   return { videoId: id, title: d.title, channel: d.author_name, thumb: d.thumbnail_url }
 }
 
-const cache = new Map<string, { items: Result[]; next?: string }>()
-export async function searchYT(q: string, pageToken?: string) {
-  const key = q + '|' + (pageToken ?? '')
-  if (cache.has(key)) return cache.get(key)!
+export const MAX_TERM = 100 // limite do servidor (api/search.ts) para o termo enviado ao YouTube
+export const KARAOKE_SUFFIX = ' karaokê'
+/** Normaliza a consulta: minúsculas e espaços colapsados. Nunca corta o texto. */
+export function normalizeQuery(s: string) {
+  return s.normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim()
+}
+export type TermResult = { term: string } | { tooLong: true; max: number }
+/** Monta o termo enviado ao servidor. O limite considera o " karaokê" acrescentado; se não couber, avisa em vez de cortar. */
+export function buildTerm(raw: string, withKaraoke: boolean): TermResult {
+  const base = normalizeQuery(raw)
+  const add = withKaraoke && !/karaok/.test(base)
+  const max = MAX_TERM - (add ? KARAOKE_SUFFIX.length : 0)
+  if (base.length > max) return { tooLong: true, max }
+  return { term: add ? base + KARAOKE_SUFFIX : base }
+}
+/** Junta páginas sem repetir vídeos (inclusive repetidos dentro da própria página recebida). */
+export function mergeResults(prev: Result[], more: Result[]): Result[] {
+  const seen = new Set<string>(), out: Result[] = []
+  for (const r of [...prev, ...more]) { if (!seen.has(r.videoId)) { seen.add(r.videoId); out.push(r) } }
+  return out
+}
+
+type Page = { items: Result[]; next?: string }
+// Cache só de pesquisas bem-sucedidas: memória + sessionStorage (some ao fechar a aba), validade de 1 h, até 40 entradas.
+const TTL = 60 * 60 * 1000, MAX = 40, PFX = 'kp:sc:'
+const mem = new Map<string, { t: number; d: Page }>()
+const inflight = new Map<string, Promise<Page>>()
+// A chave ignora acentos: "Evidências" e "evidencias" compartilham o cache. O token de página faz parte da chave.
+const keyOf = (q: string, token?: string) => q.normalize('NFD').replace(/[̀-ͯ]/g, '') + '|' + (token ?? '')
+
+function getCached(k: string): Page | null {
+  const m = mem.get(k)
+  if (m) { if (Date.now() - m.t <= TTL) return m.d; mem.delete(k) }
+  try {
+    const v = sessionStorage.getItem(PFX + k)
+    if (!v) return null
+    const o = JSON.parse(v)
+    if (Date.now() - o.t > TTL || !Array.isArray(o.d?.items)) { sessionStorage.removeItem(PFX + k); return null }
+    mem.set(k, o)
+    return o.d as Page
+  } catch { return null }
+}
+function setCached(k: string, d: Page) {
+  mem.set(k, { t: Date.now(), d })
+  try {
+    sessionStorage.setItem(PFX + k, JSON.stringify({ t: Date.now(), d }))
+    const idx: string[] = JSON.parse(sessionStorage.getItem(PFX + 'idx') ?? '[]').filter((x: string) => x !== k)
+    idx.push(k)
+    while (idx.length > MAX) { const old = idx.shift()!; sessionStorage.removeItem(PFX + old); mem.delete(old) }
+    sessionStorage.setItem(PFX + 'idx', JSON.stringify(idx))
+  } catch { /* armazenamento cheio/bloqueado: segue só com a memória */ }
+}
+
+// Mensagens para o usuário (os detalhes técnicos ficam no README e no console).
+const MSG_OFF = 'A pesquisa por nome não está disponível no momento. Você ainda pode colar o link do vídeo do YouTube.'
+const MSG_LIMIT = 'O limite diário de pesquisas foi atingido. Cole o link do vídeo ou tente de novo mais tarde.'
+const MSG_FAIL = 'Não foi possível pesquisar agora. Tente novamente em instantes.'
+async function fetchPage(q: string, pageToken?: string): Promise<Page> {
   let r: Response
-  try { r = await fetch(`/api/search?q=${encodeURIComponent(q)}` + (pageToken ? `&pageToken=${pageToken}` : '')) }
-  catch { throw new Error('Sem conexão com o servidor de pesquisa.') }
-  const d = await r.json().catch(() => ({}))
-  if (r.status === 503 || d.error === 'missing_key') throw new Error('Pesquisa não configurada: defina YOUTUBE_API_KEY no servidor (veja o README).')
-  if (r.status === 429) throw new Error('Limite diário da API do YouTube atingido. Tente novamente mais tarde.')
-  if (!r.ok) throw new Error('Falha na pesquisa. Tente novamente.')
-  cache.set(key, d)
-  return d as { items: Result[]; next?: string }
+  try { r = await fetch(`/api/search?q=${encodeURIComponent(q)}` + (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')) }
+  catch { throw new Error('Sem conexão. Verifique a internet e tente de novo.') }
+  const d = await r.json().catch(() => null)
+  if (r.status === 503 || d?.error === 'missing_key') { console.warn('[pesquisa] YOUTUBE_API_KEY não configurada no servidor.'); throw new Error(MSG_OFF) }
+  if (r.status === 404 || r.status === 405) { console.warn('[pesquisa] /api/search não existe neste host (precisa de função serverless).'); throw new Error(MSG_OFF) }
+  if (r.status === 429) throw new Error(MSG_LIMIT)
+  if (!r.ok) throw new Error(MSG_FAIL)
+  if (!Array.isArray(d?.items)) { console.warn('[pesquisa] resposta inesperada de /api/search.'); throw new Error(MSG_OFF) } // ex.: servidor de desenvolvimento devolvendo a página HTML
+  return d as Page
+}
+
+export async function searchYT(q: string, pageToken?: string): Promise<Page> {
+  const k = keyOf(q, pageToken)
+  const hit = getCached(k)
+  if (hit) return hit
+  const going = inflight.get(k) // dois pedidos iguais ao mesmo tempo viram um só
+  if (going) return going
+  const p = fetchPage(q, pageToken).then(d => { setCached(k, d); return d }).finally(() => inflight.delete(k))
+  inflight.set(k, p)
+  return p
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload } from 'lucide-react'
-import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed } from './lib'
+import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic } from 'lucide-react'
+import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed, buildTerm, mergeResults } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 
@@ -27,6 +27,48 @@ function Counter({ n, anim }: { n: number; anim: boolean }) {
 const btn = 'rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
 const primary = 'rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
 
+function SingerModal({ title, thumb, initial, suggestions, onConfirm, onCancel }: {
+  title: string; thumb: string; initial: string; suggestions: string[]
+  onConfirm: (name: string) => void; onCancel: () => void
+}) {
+  const [name, setName] = useState(initial)
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => { ref.current?.focus(); ref.current?.select() }, [])
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onCancel])
+  const ok = name.trim().length > 0
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center" onMouseDown={e => { if (e.target === e.currentTarget) onCancel() }}>
+      <form role="dialog" aria-modal="true" aria-labelledby="singer-title" onSubmit={e => { e.preventDefault(); if (ok) onConfirm(name) }}
+        className="w-full max-w-md space-y-3 rounded-2xl border border-fuchsia-500/40 bg-[#14093a] p-4 shadow-[0_0_40px_#a21caf66]">
+        <h2 id="singer-title" className="text-lg font-bold">Quem vai cantar?</h2>
+        <div className="flex items-center gap-2 rounded-xl bg-white/5 p-2">
+          <img src={thumb} alt="" className="h-12 w-20 rounded object-cover" />
+          <p className="line-clamp-2 min-w-0 flex-1 text-sm font-semibold">{title}</p>
+        </div>
+        <input ref={ref} aria-label="Nome do cantor" value={name} onChange={e => setName(e.target.value)} maxLength={24} placeholder="Nome ou apelido"
+          className="w-full rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
+        {suggestions.length > 0 && (
+          <div className="flex flex-wrap gap-2" aria-label="Cantores da sessão">
+            {suggestions.map(n => (
+              <button type="button" key={n} onClick={() => setName(n)}
+                className={`rounded-full px-3 py-2 text-sm hover:bg-white/20 ${n.toLowerCase() === name.trim().toLowerCase() ? 'bg-fuchsia-600/60 ring-1 ring-fuchsia-300' : 'bg-white/10'}`}>{n}</button>
+            ))}
+          </div>
+        )}
+        {!ok && <p className="text-sm text-amber-300">Informe quem vai cantar para continuar.</p>}
+        <div className="flex justify-end gap-2">
+          <button type="button" className={btn} onClick={onCancel}>Cancelar</button>
+          <button type="submit" disabled={!ok} className={`${primary} disabled:cursor-not-allowed disabled:opacity-40`}>Confirmar e adicionar</button>
+        </div>
+      </form>
+    </div>
+  )
+}
+
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULTS, ...load('kp:settings', {}) }))
   const [queue, setQueue] = useState<Song[]>(() => load('kp:queue', []))
@@ -42,9 +84,13 @@ export default function App() {
   const [karaoke, setKaraoke] = useState(true)
   const [results, setResults] = useState<Result[]>([])
   const [more, setMore] = useState<string>()
+  const [empty, setEmpty] = useState(false) // a última pesquisa não encontrou nada
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
   const [party, setParty] = useState(false)
+  const [pending, setPending] = useState<Result | null>(null) // resultado aguardando a confirmação do cantor
+  const lastTerm = useRef('') // consulta efetiva da última pesquisa: "Mais resultados" usa esta, não o campo de texto
+  const searchSeq = useRef(0) // descarta respostas de pesquisas ultrapassadas
 
   const player = useRef<Playback | null>(null)
   const yt = useRef<YouTubePlayback | null>(null)
@@ -165,20 +211,34 @@ export default function App() {
   }, [phase, paused, left])
 
   const doSearch = async (next?: string) => {
-    if (!q.trim()) return
+    const raw = q.trim()
+    if (next ? !lastTerm.current : !raw) return
+    const id = next ? null : videoIdFrom(raw)
+    let term = lastTerm.current // "Mais resultados" continua a consulta original, não o texto atual do campo
+    if (!next && !id) {
+      const b = buildTerm(raw, karaoke)
+      if ('tooLong' in b) { setNote(`Pesquisa muito longa: use até ${b.max} caracteres.`); return } // não corta o nome da música
+      term = b.term
+    }
+    const my = ++searchSeq.current
     setBusy(true); setNote('')
+    if (!next) { setResults([]); setMore(undefined); setEmpty(false); lastTerm.current = '' } // nova pesquisa: começa do zero
     try {
-      const id = videoIdFrom(q)
-      if (id) { setResults([await oembed(id)]); setMore(undefined) }
-      else {
-        const term = karaoke && !/karaok/i.test(q) ? `${q} karaokê` : q
+      if (id) {
+        const v = await oembed(id)
+        if (my !== searchSeq.current) return
+        setResults([v])
+      } else {
         const r = await searchYT(term, next)
-        setResults(next ? [...results, ...r.items] : r.items); setMore(r.next)
+        if (my !== searchSeq.current) return // resposta de pesquisa ultrapassada
+        lastTerm.current = term
+        setResults(prev => mergeResults(next ? prev : [], r.items)); setMore(r.next)
+        if (!next && r.items.length === 0) setEmpty(true)
       }
-    } catch (e: any) { setNote(e.message) } finally { setBusy(false) }
+    } catch (e: any) { if (my === searchSeq.current) setNote(e.message) } finally { if (my === searchSeq.current) setBusy(false) }
   }
-  const add = (r: Result & { source?: Song['source']; fileName?: string }, file?: File) => {
-    const name = singer.trim()
+  const add = (r: Result & { source?: Song['source']; fileName?: string }, file?: File, nameOverride?: string) => {
+    const name = (nameOverride ?? singer).trim()
     if (!name) { setNote('Digite o nome de quem vai cantar (campo no topo).'); return }
     if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
     if ([...queue, ...(current ? [current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
@@ -212,6 +272,22 @@ export default function App() {
   const msg = useMemo(() => (score != null ? cheer(score) : ''), [score])
   const nextUp = queue[0]
   const shownSpeed = source === 'youtube' ? (yt.current?.effectiveRate(speed) ?? speed) : speed // valor realmente aplicado
+  // Cantores da sessão (histórico mais recente primeiro, depois quem está tocando e a fila), sem repetir
+  const singers = useMemo(() => {
+    const seen = new Set<string>(), out: string[] = []
+    const push = (n?: string) => { const t = n?.trim(); if (!t || seen.has(t.toLowerCase())) return; seen.add(t.toLowerCase()); out.push(t) }
+    history.forEach(h => push(h.singer)); push(current?.singer); queue.forEach(x => push(x.singer))
+    return out.slice(0, 8)
+  }, [history, current, queue])
+  const cancelPending = () => setPending(null)
+  const confirmSinger = (raw: string) => {
+    const typed = raw.trim().slice(0, 24)
+    if (!pending || !typed) return
+    const name = singers.find(n => n.toLowerCase() === typed.toLowerCase()) ?? typed // mantém a grafia já usada no ranking
+    setSinger(name) // vira o "último nome" da próxima vez
+    add(pending, undefined, name)
+    setPending(null)
+  }
 
   const overlay =
     phase === 'SCORING' ? (
@@ -330,13 +406,14 @@ export default function App() {
                 <div key={r.videoId} className={row}>
                   <img src={r.thumb} alt="" className="h-14 w-24 rounded object-cover" />
                   <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-semibold">{r.title}</p><p className="truncate text-xs text-white/60">{r.channel}</p></div>
-                  <button className={primary} onClick={() => add(r)} aria-label="Adicionar à fila"><Plus size={18} /></button>
+                  <button className={`${primary} flex shrink-0 items-center gap-1 px-3 py-2 text-sm`} onClick={() => setPending(r)} aria-label={`Quero essa: ${r.title}`}><Mic size={16} />Quero essa</button>
                 </div>
               ))}
               {more && <button className={btn} disabled={busy} onClick={() => doSearch(more)}>{busy ? 'Carregando…' : 'Mais resultados'}</button>}
             </div>
           )}
           {!party && busy && !results.length && <p className="mt-4 text-white/60">Pesquisando…</p>}
+          {!party && empty && !busy && <p className="mt-4 text-white/60">Nenhum resultado. Tente outro nome ou cole o link do vídeo.</p>}
         </section>
 
         {!party && (
@@ -410,6 +487,7 @@ export default function App() {
           </aside>
         )}
       </main>
+      {pending && <SingerModal title={pending.title} thumb={pending.thumb} initial={singer} suggestions={singers} onConfirm={confirmSinger} onCancel={cancelPending} />}
     </div>
   )
 }
