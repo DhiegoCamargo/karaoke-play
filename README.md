@@ -1,17 +1,34 @@
 # Karaokê Play
 
-React + TS + Vite + Tailwind v4. Player: YouTube IFrame API. Pesquisa: `api/search.ts` (serverless; a chave fica só no servidor).
+React + TypeScript + Vite + Tailwind v4. Três fontes de música na mesma fila:
 
-## Rodar localmente
-1. `npm install`
-2. Crie uma chave da YouTube Data API v3 no Google Cloud Console (Credenciais > Chave de API; restrinja à API).
-3. `npm i -g vercel && vercel dev` com `YOUTUBE_API_KEY=...` (`.env.local`). `npm run dev` sozinho serve só a interface (a pesquisa mostrará "não configurada"; colar link do YouTube funciona).
+- **YouTube incorporado** (player oficial, IFrame API). Velocidade pela API oficial; **tom pela extensão experimental KP Tom** (opcional).
+- **MP4/MP3 local**: tom (−12 a +12) e velocidade processados no navegador com SoundTouch (AudioWorklet).
+- **Biblioteca hospedada**: apenas preparada no código (`source: 'library'`), sem interface.
 
-## Publicar
-Vercel: importe o repositório, defina `YOUTUBE_API_KEY` em Environment Variables e faça deploy. Cota padrão: 10.000 unidades/dia (cada busca custa 100); respostas são cacheadas 1 h.
+Fila, nota sorteada (recreativa, não avalia a voz), ranking, histórico, contagem regressiva, modo festa e tela cheia valem para todas as fontes.
+
+## KP Tom (experimental)
+Extensão Chrome própria, fora deste repositório, que processa o áudio dentro do iframe do YouTube. O site a comanda por mensagens (`src/kpTomBridge.ts`).
+- Só Chrome em computador/ChromeOS; precisa ser instalada pelo usuário.
+- Nas opções da extensão, **autorize a origem exata do site** (ex.: o endereço do StackBlitz, que muda por sessão, ou o domínio da Vercel) e recarregue a página.
+- Sem a extensão, o painel indica o Transpose ou o modo MP4 local; o painel "Diagnóstico da extensão" mostra o estado da conexão.
+- **Uso público**: as políticas do YouTube restringem alterar o áudio de vídeos incorporados. Mantenha como teste privado até esclarecer isso com o YouTube (não é parecer jurídico).
+
+## Pesquisa de músicas
+`Pesquisar` → o site acrescenta "karaokê" à consulta (sem mostrar), exibe miniatura, título e canal, e cada resultado tem **Quero essa**: abre uma janela para confirmar quem vai cantar (último nome já preenchido e atalhos dos cantores da sessão) e adiciona à fila. Colar um link do YouTube também funciona.
+- Consultas são normalizadas (caixa, espaços) e o resultado fica em cache por 1 h na aba (sessionStorage). Não há cache permanente.
+- O termo enviado (com o " karaokê" acrescentado) tem no máximo 100 caracteres, limite do servidor; se não couber, o site avisa em vez de cortar o nome. Nova pesquisa começa do zero; "Mais resultados" continua a pesquisa anterior.
+- A busca usa `api/search.ts`, função serverless que guarda a chave no servidor. Se a chave faltar ou a função não existir no host, o site mostra um aviso simples e continua aceitando links; os detalhes técnicos aparecem só no console do navegador e aqui (variável `YOUTUBE_API_KEY`).
+
+## Rodar / publicar na Vercel
+1. Google Cloud: ative a **YouTube Data API v3** e crie uma chave (restrinja à API; restrição por site não serve, pois a chamada parte do servidor).
+2. Vercel: importe o repositório (preset Vite), defina `YOUTUBE_API_KEY` em *Environment Variables* e faça o deploy. Cada branch recebe uma URL de prévia. Confira os termos do plano gratuito para uso público.
+3. Local: `npm install`, `vercel dev` (com `.env.local`) para ter a pesquisa; `npm run dev` serve só a interface.
+- Cota padrão da API: 10.000 unidades/dia e cada busca custa 100 (cerca de 100 buscas/dia no site todo) — confirme no Google Cloud. O servidor envia cache de 1 h para a CDN.
+- StackBlitz e GitHub Pages **não executam** `api/search.ts`: a pesquisa por nome só funciona num host com funções serverless.
 
 ## Estado
-- Implementado: pesquisa, link direto, fila (reordenar/remover/tocar agora), nota sorteada (crypto, uniforme), ranking, histórico, contagem 5/10/15 s com pausar/pular/cancelar, modo festa, configurações em LocalStorage, tratamento de erros.
-- Não testado ainda (sem rede/navegador neste ambiente): build, pesquisa real, autoplay, celular, Transpose.
-- Pendente: separar App.tsx em componentes, arrastar e soltar, testes automatizados.
-- Transpose: sem integração; apenas ajuda ao usuário.
+- Testado pelo autor no Chromebook/StackBlitz (relato): YouTube, MP4 com SoundTouch, KP Tom, fila, nota, ranking, contagem.
+- **Não verificado**: build de produção (`npm run build`), pesquisa real na Vercel, o modal "Quero essa", celular, Safari/Firefox, TVs.
+- Pendente: limite de uso por IP (em avaliação), catálogo JSON, separar `App.tsx` em componentes.
