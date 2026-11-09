@@ -1,0 +1,31 @@
+
+name: Testar Karaokê Play
+
+on:
+  push:
+    branches:
+      - feature/etapa2-pesquisa-youtube
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Verificar compilação
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Compilar projeto
+        run: npm run build
