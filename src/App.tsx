@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic } from 'lucide-react'
+import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw } from 'lucide-react'
 import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed, buildTerm, mergeResults } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
@@ -107,10 +107,8 @@ export default function App() {
   const [extensionStatus, setExtensionStatus] = useState<KpTomStatus>('idle')
   const [extensionMessage, setExtensionMessage] = useState('')
   const [extState, setExtState] = useState<KpTomState | null>(null)
-  const [, setTick] = useState(0) // força novo render quando o YouTube informa as velocidades disponíveis
   const diagOpen = useRef(false)
   const [tone, setTone] = useState(0)
-  const [speed, setSpeed] = useState(1)
   const [keep, setKeep] = useState(false)
   const activeSong = useRef<Song | null>(null)
   const tok = useRef(0)
@@ -157,18 +155,16 @@ export default function App() {
       void ext.detect()
     }, () => {
       // Retoma a configuração após o carregamento de outro vídeo do YouTube.
-      setTick(t => t + 1)
       if (sourceRef.current === 'youtube') void ext.setPitch(toneRef.current)
     })
     local.current = new LocalPlayback(vid.current, ev)
   }, [])
-  // Tom e velocidade em efeitos separados: mexer na velocidade não reenvia o tom à extensão.
+  // A transposição é independente: a reprodução permanece na velocidade nativa (1,00×).
   useEffect(() => {
     toneRef.current = tone
     player.current?.setPitch(tone)
     if (source === 'youtube' && current) void bridge.current?.setPitch(tone)
   }, [tone, source, current?.id])
-  useEffect(() => { player.current?.setRate(speed) }, [speed, source, current?.id])
   // libera os File que não estão mais na fila nem tocando
   useEffect(() => {
     const live = new Set<string>(queue.map(q => q.id))
@@ -188,9 +184,8 @@ export default function App() {
     activeSong.current = s
     player.current = pb
     setSource(kind); setCurrent(s); setScore(null); setNote(''); setPhase('LOADING')
-    if (!keep) { toneRef.current = 0; setTone(0); setSpeed(1) }
+    if (!keep) { toneRef.current = 0; setTone(0) }
     pb.setPitch(keep ? tone : 0)
-    pb.setRate(keep ? speed : 1)
     pb.load(s, kind === 'file' ? files.current.get(s.id) : s.url)
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
     return true
@@ -303,7 +298,6 @@ export default function App() {
   }, [history])
   const msg = useMemo(() => (score != null ? cheer(score) : ''), [score])
   const nextUp = queue[0]
-  const shownSpeed = source === 'youtube' ? (yt.current?.effectiveRate(speed) ?? speed) : speed // valor realmente aplicado
   // Cantores da sessão (histórico mais recente primeiro, depois quem está tocando e a fila), sem repetir
   const singers = useMemo(() => {
     const seen = new Set<string>(), out: string[] = []
@@ -358,6 +352,20 @@ export default function App() {
     <button key={t} aria-label={label} title={label} onClick={() => setTab(t)} className={`${btn} ${tab === t ? 'ring-2 ring-fuchsia-400' : ''}`}>{icon}</button>
   )
   const row = 'flex items-center gap-2 rounded-xl bg-white/5 p-2'
+  const toneDisabled = source === 'youtube' && extensionStatus !== 'ready'
+  const toneControls = (tv = false) => {
+    const control = `${btn} disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-fuchsia-300 ${tv ? 'min-h-14 min-w-14 text-2xl' : ''}`
+    return (
+      <div role="group" aria-label="Controles de tom" className="flex flex-wrap items-center gap-2">
+        <b className={tv ? 'mr-1 text-lg' : 'w-20'}>Tom</b>
+        <button className={control} disabled={toneDisabled} onClick={() => setTone(t => Math.max(-12, t - 1))} aria-label="Diminuir um semitom" title="Diminuir um semitom">−</button>
+        <output aria-label="Tom atual" aria-live="polite" className={`text-center font-bold text-fuchsia-300 ${tv ? 'w-14 text-3xl' : 'w-12 text-xl'}`}>{tone > 0 ? '+' : ''}{tone}</output>
+        <button className={control} disabled={toneDisabled} onClick={() => setTone(t => Math.min(12, t + 1))} aria-label="Aumentar um semitom" title="Aumentar um semitom">+</button>
+        <button className={control} disabled={toneDisabled} onClick={() => setTone(0)} aria-label="Restaurar tom original" title="Restaurar tom original">{tv ? <RotateCcw size={26} aria-hidden="true" /> : 'Restaurar'}</button>
+      </div>
+    )
+  }
+
 
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,#2b1163,#0a0720_65%)] text-white">
@@ -372,36 +380,46 @@ export default function App() {
             <button className={primary} aria-label="Pesquisar"><Search size={20} /></button>
           </form>
           <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
-          <button className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com tom e velocidade)"><Upload size={20} /></button>
+          <button className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com ajuste de tom)"><Upload size={20} /></button>
           <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={20} /></button>
           <button className={btn} onClick={() => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()} aria-label="Tela cheia"><Maximize size={20} /></button>
         </header>
       )}
-      <main className={party ? 'mx-auto max-w-[1600px] p-4' : 'grid gap-4 p-3 lg:grid-cols-[1fr_380px]'}>
-        <section className="min-w-0">
-          <div className="relative aspect-video overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40">
+      <main className={party ? 'mx-auto flex h-dvh max-w-[1920px] flex-col p-3 sm:p-4' : 'grid gap-4 p-3 lg:grid-cols-[1fr_380px]'}>
+        <section className={party ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'min-w-0'}>
+          <div aria-label="Área do vídeo" className={`relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p>{nextUp && <button className={primary} onClick={() => startRef.current()}>Iniciar karaokê</button>}</Ov>}
             {overlay}
           </div>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className={`truncate font-bold ${party ? 'text-3xl' : 'text-xl'}`}>{current?.title ?? 'Nenhuma música tocando'}</p>
-              <p className="truncate text-white/70">{current ? `Cantor(a): ${current.singer}` : ''}</p>
-              <p className="truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>
+          <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'flex flex-wrap items-center gap-3'}`}>
+            <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'min-w-0 flex-1'}>
+              <div className="min-w-0" aria-label="Apresentação atual">
+                <p title={current?.title} className={`truncate font-bold ${party ? 'text-2xl lg:text-3xl' : 'text-xl'}`}>{current?.title ?? 'Nenhuma música tocando'}</p>
+                {current && <p title={`Cantor(a): ${current.singer}`} className={`truncate font-semibold text-white ${party ? 'mt-1 text-xl lg:text-2xl' : 'text-lg'}`}>Cantor(a): {current.singer}</p>}
+              </div>
+              {party ? (
+                <div className="min-w-0 space-y-1 text-lg lg:text-xl" aria-label="Próxima apresentação">
+                  {nextUp ? <>
+                    <p title={`Próximo cantor: ${nextUp.singer}`} className="truncate font-semibold text-violet-100">Próximo cantor: {nextUp.singer}</p>
+                    <p title={`Próxima música: ${nextUp.title}`} className="truncate text-white"><span className="text-violet-200">Próxima música:</span> {nextUp.title}</p>
+                  </> : <p className="text-violet-100">Fila vazia</p>}
+                  <p className="text-sm text-violet-200">{queue.length} na fila</p>
+                </div>
+              ) : <p className="truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>}
             </div>
-            {(phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
-            {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" onClick={skip}><SkipForward /></button>}
-            {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa"><X /></button>}
+            <div className={`flex flex-wrap items-center gap-3 ${party ? '[&>button]:min-h-14 [&>button]:min-w-14 [&>button]:text-xl' : ''}`}>
+              {party && current && toneControls(true)}
+              {(phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} title={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
+              {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" title="Pular música" onClick={skip}><SkipForward /></button>}
+              {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
+            </div>
+            {party && current && toneDisabled && <p role="status" className="text-sm text-amber-200">Tom indisponível: conecte e autorize a extensão KP Tom.</p>}
           </div>
           {!party && current && (
             <div className="mt-3 space-y-2 rounded-xl bg-white/5 p-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2"><b className="w-20">Tom</b>
-                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(t => Math.max(-12, t - 1))} aria-label="Diminuir um semitom">−</button>
-                <span className="w-12 text-center text-xl font-bold text-fuchsia-300">{tone > 0 ? '+' : ''}{tone}</span>
-                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(t => Math.min(12, t + 1))} aria-label="Aumentar um semitom">+</button>
-                <button className={btn} disabled={source === 'youtube' && extensionStatus !== 'ready'} onClick={() => setTone(0)}>Restaurar</button></div>
+              {toneControls()}
               {source === 'youtube' && (
                 <div className="space-y-1 text-white/70">
                   <p>KP Tom: {extensionStatus === 'ready' ? 'conectada' : extensionStatus === 'denied' ? 'site não autorizado nas opções da extensão' : extensionStatus === 'detecting' ? 'procurando extensão…' : 'não detectada (tom indisponível)'}</p>
@@ -423,12 +441,7 @@ export default function App() {
                   </details>
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-2"><b className="w-20">Velocidade</b>
-                <input type="range" min={0.5} max={1.5} step={source === 'youtube' ? 0.25 : 0.05} value={speed} onChange={e => setSpeed(+e.target.value)} className="min-w-0 flex-1" aria-label="Velocidade" />
-                <span className="w-14 text-center">{shownSpeed.toFixed(2)}×</span>
-                <button className={btn} onClick={() => setSpeed(1)}>Restaurar</button></div>
-              {source === 'youtube' && <p className="text-white/60">No YouTube só valem as velocidades que o player oferece; o valor mostrado é o aplicado.</p>}
-              <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={keep} onChange={e => setKeep(e.target.checked)} />Manter tom e velocidade na próxima música</label>
+              <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={keep} onChange={e => setKeep(e.target.checked)} />Manter tom na próxima música</label>
             </div>
           )}
           {!party && note && phase !== 'ERROR' && <p role="status" className="mt-2 rounded-lg bg-fuchsia-500/10 p-2 text-sm">{note}</p>}

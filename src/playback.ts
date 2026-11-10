@@ -5,30 +5,28 @@ import processorCode from '@soundtouchjs/audio-worklet/processor?raw'
 
 export type Events = { ended(): void; playing(): void; paused(): void; error(m: string): void; blocked(): void }
 export interface Playback {
-  readonly caps: { pitch: boolean; rate: boolean }
+  readonly caps: { pitch: boolean }
   ready(): boolean
   load(s: Song, src?: File | string): void
   play(): void
   pause(): void
   stop(): void
-  setRate(r: number): void
   setPitch(semitones: number): void
 }
 
 // ---------- YouTube: só controles oficiais (sem tom) ----------
 export class YouTubePlayback implements Playback {
-  readonly caps = { pitch: false, rate: true }
+  readonly caps = { pitch: false }
   private p: any
   private videoId = ''
   private hasPlayed = false
   private isReady = false
-  private rate = 1
   constructor(elId: string, private ev: Events, private onIframeReady?: (iframe: HTMLIFrameElement) => void, private onVideoPlaying?: () => void) {
     loadYT().then(YT => {
       this.p = new YT.Player(elId, {
         width: '100%', height: '100%', playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
         events: {
-          onReady: (e: any) => { this.isReady = true; const frame = e.target?.getIframe?.(); if (frame) this.onIframeReady?.(frame) },
+          onReady: (e: any) => { this.isReady = true; this.applyRate(); const frame = e.target?.getIframe?.(); if (frame) this.onIframeReady?.(frame) },
           onStateChange: (e: any) => {
             // O iframe pode entregar eventos que já estavam na fila ao trocar de vídeo.
             if (!this.isCurrentVideo(e.target) || e.target.getPlayerState() !== e.data) return
@@ -42,6 +40,7 @@ export class YouTubePlayback implements Playback {
               this.onVideoPlaying?.()
             } else if (e.data === 2 && this.hasPlayed) ev.paused()
           },
+          onPlaybackRateChange: () => this.applyRate(),
           onError: (e: any) => {
             if (!this.videoId) return
             const reportedId = videoIdFrom(e.target.getVideoUrl?.() ?? '')
@@ -66,23 +65,16 @@ export class YouTubePlayback implements Playback {
   pause() { if (this.videoId) this.p?.pauseVideo() }
   stop() { this.videoId = ''; this.p?.stopVideo?.() }
   setPitch() { /* não existe API oficial de tom */ }
-  setRate(r: number) { this.rate = r; this.applyRate() }
-  /** Valor que a API realmente aceita para o pedido r (o mais próximo de getAvailablePlaybackRates). */
-  effectiveRate(r: number): number {
-    const av: number[] = this.p?.getAvailablePlaybackRates?.() ?? [1]
-    return av.reduce((a, b) => (Math.abs(b - r) < Math.abs(a - r) ? b : a), 1)
-  }
   private applyRate() {
+    // A velocidade é fixa; o tom continua sob responsabilidade da KP Tom.
     const p = this.p
-    if (!p?.setPlaybackRate) return
-    const n = this.effectiveRate(this.rate)
-    if (p.getPlaybackRate?.() !== n) p.setPlaybackRate(n)
+    if (p?.setPlaybackRate && p.getPlaybackRate?.() !== 1) p.setPlaybackRate(1)
   }
 }
 
-// ---------- MP4/MP3 local (ou, no futuro, URL da biblioteca): tom + velocidade via SoundTouch ----------
+// ---------- MP4/MP3 local (ou, no futuro, URL da biblioteca): tom via SoundTouch, reprodução em 1,00× ----------
 export class LocalPlayback implements Playback {
-  readonly caps = { pitch: true, rate: true }
+  readonly caps = { pitch: true }
   private ctx?: AudioContext
   private node?: SoundTouchNode
   private graphP?: Promise<void>
@@ -90,7 +82,6 @@ export class LocalPlayback implements Playback {
   private active = false
   private busy = false // true durante uma carga: ignora pause/ended/erro do vídeo anterior
   private req = 0 // identifica a carga mais recente; cargas antigas se abandonam
-  private rate = 1
   private pitch = 0
   constructor(private v: HTMLVideoElement, private ev: Events) {
     const isCurrent = () => this.active && v.currentSrc === this.url && !!this.url
@@ -112,7 +103,7 @@ export class LocalPlayback implements Playback {
     const src = c.createMediaElementSource(this.v)
     src.connect(n); n.connect(c.destination)
     n.pitchSemitones.value = this.pitch
-    n.playbackRate.value = this.rate
+    n.playbackRate.value = 1
     this.ctx = c; this.node = n
   }
   private revoke() { if (this.url.startsWith('blob:')) URL.revokeObjectURL(this.url); this.url = '' }
@@ -165,11 +156,10 @@ export class LocalPlayback implements Playback {
     this.v.removeAttribute('src'); this.v.load()
   }
   setPitch(s: number) { this.pitch = s; if (this.node) this.node.pitchSemitones.value = s }
-  setRate(r: number) { this.rate = r; this.applyRate() }
-  private applyRate() { // modo documentado: o elemento muda a velocidade e o processador compensa o tom
+  private applyRate() { // mantém a velocidade nativa, sem alterar o pitch selecionado
     this.v.preservesPitch = false
-    this.v.defaultPlaybackRate = this.rate
-    this.v.playbackRate = this.rate
-    if (this.node) this.node.playbackRate.value = this.rate
+    this.v.defaultPlaybackRate = 1
+    this.v.playbackRate = 1
+    if (this.node) this.node.playbackRate.value = 1
   }
 }

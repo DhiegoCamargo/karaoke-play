@@ -2,8 +2,8 @@
 
 React + TypeScript + Vite + Tailwind v4. Três fontes de música na mesma fila:
 
-- **YouTube incorporado** (player oficial, IFrame API). Velocidade pela API oficial; **tom pela extensão experimental KP Tom** (opcional).
-- **MP4/MP3 local**: tom (−12 a +12) e velocidade processados no navegador com SoundTouch (AudioWorklet).
+- **YouTube incorporado** (player oficial, IFrame API). Reprodução fixa em 1,00×; **tom pela extensão experimental KP Tom** (opcional).
+- **MP4/MP3 local**: tom (−12 a +12) processado no navegador com SoundTouch (AudioWorklet), mantendo velocidade de 1,00×.
 - **Biblioteca hospedada**: apenas preparada no código (`source: 'library'`), sem interface.
 
 Fila, nota sorteada (recreativa, não avalia a voz), ranking, histórico, contagem regressiva, modo festa e tela cheia valem para todas as fontes.
@@ -14,6 +14,8 @@ Extensão Chrome própria, fora deste repositório, que processa o áudio dentro
 - Nas opções da extensão, **autorize a origem exata do site** (ex.: o endereço do StackBlitz, que muda por sessão, ou o domínio da Vercel) e recarregue a página.
 - Sem a extensão, o painel indica o Transpose ou o modo MP4 local; o painel "Diagnóstico da extensão" mostra o estado da conexão.
 - **Uso público**: as políticas do YouTube restringem alterar o áudio de vídeos incorporados. Mantenha como teste privado até esclarecer isso com o YouTube (não é parecer jurídico).
+
+O controle de tom permite subir/descer em semitons e **Restaurar** ao tom original (0). A opção **Manter tom na próxima música** preserva a tonalidade selecionada. Não há controle de velocidade nesta etapa. Sem a KP Tom, os botões de tom do YouTube ficam indisponíveis; reprodução e demais funções continuam disponíveis.
 
 ## Pesquisa de músicas
 `Pesquisar` → o site acrescenta "karaokê" à consulta (sem mostrar), exibe miniatura, título e canal, e cada resultado tem **Quero essa**: abre uma janela para confirmar quem vai cantar (último nome já preenchido e atalhos dos cantores da sessão) e adiciona à fila. Colar um link do YouTube também funciona.
