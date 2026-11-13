@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw } from 'lucide-react'
-import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed, buildTerm, mergeResults } from './lib'
+import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw, Heart } from 'lucide-react'
+import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed, buildTerm, mergeResults, mostSungYouTubeSongs } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type QueueResult = Result & { source?: Song['source']; fileName?: string }
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
+type MusicView = 'search' | 'favorites' | 'mostSung'
+const genres = ['Pagode', 'Sertanejo', 'Samba', 'MPB', 'Rock nacional', 'Forró', 'Gospel', 'Internacional']
+const musicViews: { value: MusicView; label: string }[] = [
+  { value: 'search', label: 'Busca' },
+  { value: 'favorites', label: 'Favoritas' },
+  { value: 'mostSung', label: 'Mais cantadas' },
+]
 const SCORE_READ_MS = 5000
 const LOCAL_THUMB = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="56"><rect width="96" height="56" fill="#2b1163"/><text x="48" y="34" font-size="22" text-anchor="middle" fill="#e879f9">MP4</text></svg>')
 const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)]
@@ -74,6 +81,8 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULTS, ...load('kp:settings', {}) }))
   const [queue, setQueue] = useState<Song[]>(() => load('kp:queue', []))
   const [history, setHistory] = useState<HistoryItem[]>(() => load('kp:history', []))
+  const [favorites, setFavorites] = useState<Result[]>(() => load('kp:favorites', []))
+  const [musicView, setMusicView] = useState<MusicView>('search')
   const [singer, setSinger] = useState<string>(() => load('kp:singer', ''))
   const [current, setCurrent] = useState<Song | null>(null)
   const [phase, updatePhase] = useState<Phase>('IDLE')
@@ -130,6 +139,7 @@ export default function App() {
   useEffect(() => save('kp:settings', settings), [settings])
   useEffect(() => save('kp:queue', queue), [queue])
   useEffect(() => save('kp:history', history), [history])
+  useEffect(() => save('kp:favorites', favorites), [favorites])
   useEffect(() => save('kp:singer', singer), [singer])
 
   useEffect(() => {
@@ -241,9 +251,10 @@ export default function App() {
     return () => clearTimeout(t)
   }, [phase, paused, left, queue.length, settings.autoplay])
 
-  const doSearch = async (next?: string) => {
-    const raw = q.trim()
+  const doSearch = async (query: string, next?: string) => {
+    const raw = query.trim()
     if (next ? !lastTerm.current : !raw) return
+    setMusicView('search')
     const id = next ? null : videoIdFrom(raw)
     let term = lastTerm.current // "Mais resultados" continua a consulta original, não o texto atual do campo
     if (!next && !id) {
@@ -268,6 +279,15 @@ export default function App() {
       }
     } catch (e: any) { if (my === searchSeq.current) setNote(e.message) } finally { if (my === searchSeq.current) setBusy(false) }
   }
+  const searchGenre = (genre: string) => {
+    setQ(genre)
+    void doSearch(genre)
+  }
+  const toggleFavorite = (result: Result) => setFavorites(previous =>
+    previous.some(item => item.videoId === result.videoId)
+      ? previous.filter(item => item.videoId !== result.videoId)
+      : [result, ...previous],
+  )
   const add = (r: QueueResult, name: string, file?: File) => {
     if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
     if ([...queue, ...(activeSong.current ? [activeSong.current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
@@ -297,6 +317,9 @@ export default function App() {
       .sort((a, b) => b.best - a.best || b.avg - a.avg)
   }, [history])
   const msg = useMemo(() => (score != null ? cheer(score) : ''), [score])
+  const mostSung = useMemo(() => mostSungYouTubeSongs(history), [history])
+  const playCounts = new Map(mostSung.map(({ result, count }) => [result.videoId, count]))
+  const visibleSongs = musicView === 'favorites' ? favorites : musicView === 'mostSung' ? mostSung.map(item => item.result) : results
   const nextUp = queue[0]
   // Cantores da sessão (histórico mais recente primeiro, depois quem está tocando e a fila), sem repetir
   const singers = useMemo(() => {
@@ -374,7 +397,7 @@ export default function App() {
           <h1 className="bg-gradient-to-r from-violet-400 via-blue-400 to-fuchsia-500 bg-clip-text text-2xl font-extrabold text-transparent">Karaokê Play</h1>
           <input aria-label="Nome do cantor" value={singer} onChange={e => setSinger(e.target.value)} placeholder="Quem vai cantar?" maxLength={24}
             className="w-36 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
-          <form className="flex min-w-[220px] flex-1 gap-2" onSubmit={e => { e.preventDefault(); doSearch() }}>
+          <form className="flex min-w-[220px] flex-1 gap-2" onSubmit={e => { e.preventDefault(); void doSearch(q) }}>
             <input aria-label="Pesquisar música ou colar link" value={q} onChange={e => setQ(e.target.value)} placeholder="Música, artista ou link do YouTube"
               className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
             <button className={primary} aria-label="Pesquisar"><Search size={20} /></button>
@@ -445,20 +468,54 @@ export default function App() {
             </div>
           )}
           {!party && note && phase !== 'ERROR' && <p role="status" className="mt-2 rounded-lg bg-fuchsia-500/10 p-2 text-sm">{note}</p>}
-          {!party && results.length > 0 && (
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {results.map(r => (
-                <div key={r.videoId} className={row}>
-                  <img src={r.thumb} alt="" className="h-14 w-24 rounded object-cover" />
-                  <div className="min-w-0 flex-1"><p className="line-clamp-2 text-sm font-semibold">{r.title}</p><p className="truncate text-xs text-white/60">{r.channel}</p></div>
-                  <button className={`${primary} flex shrink-0 items-center gap-1 px-3 py-2 text-sm`} onClick={() => setPending({ result: r })} aria-label={`Quero essa: ${r.title}`}><Mic size={16} />Quero essa</button>
+          {!party && (
+            <div className="mt-4 space-y-3">
+              <div role="group" aria-label="Listas de músicas" className="flex flex-wrap gap-2">
+                {musicViews.map(({ value, label }) => (
+                  <button key={value} type="button" aria-pressed={musicView === value} onClick={() => setMusicView(value)}
+                    className={`${btn} aria-pressed:bg-violet-700`}>{label}</button>
+                ))}
+              </div>
+              {musicView === 'search' && (
+                <div role="group" aria-label="Pesquisar por estilo" className="flex flex-wrap gap-2">
+                  {genres.map(genre => (
+                    <button key={genre} type="button" className="rounded-full bg-white/10 px-3 py-2 text-sm hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400"
+                      onClick={() => searchGenre(genre)}>{genre}</button>
+                  ))}
                 </div>
-              ))}
-              {more && <button className={btn} disabled={busy} onClick={() => doSearch(more)}>{busy ? 'Carregando…' : 'Mais resultados'}</button>}
+              )}
+              {musicView === 'favorites' && !favorites.length && <p className="text-sm text-white/60">Toque no coração de uma música para guardá-la aqui.</p>}
+              {musicView === 'mostSung' && !mostSung.length && <p className="text-sm text-white/60">As músicas do YouTube aparecem aqui após a primeira apresentação concluída.</p>}
             </div>
           )}
-          {!party && busy && !results.length && <p className="mt-4 text-white/60">Pesquisando…</p>}
-          {!party && empty && !busy && <p className="mt-4 text-white/60">Nenhum resultado. Tente outro nome ou cole o link do vídeo.</p>}
+          {!party && visibleSongs.length > 0 && (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {visibleSongs.map(r => {
+                const favorite = favorites.some(item => item.videoId === r.videoId)
+                const count = playCounts.get(r.videoId)
+                return (
+                  <div key={r.videoId} className={`${row} flex-wrap`}>
+                    <img src={r.thumb} alt="" className="h-12 w-20 shrink-0 rounded object-cover" />
+                    <div className="min-w-[7rem] flex-1">
+                      <p className="line-clamp-2 text-sm font-semibold">{r.title}</p>
+                      <p className="truncate text-xs text-white/60">{r.channel}</p>
+                      {musicView === 'mostSung' && <p className="text-xs text-violet-200">{count} {count === 1 ? 'apresentação' : 'apresentações'}</p>}
+                    </div>
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      <button type="button" className="rounded-xl bg-white/10 p-3 hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400"
+                        aria-pressed={favorite} aria-label={`Favoritar: ${r.title}`} onClick={() => toggleFavorite(r)}>
+                        <Heart size={16} className={favorite ? 'fill-fuchsia-400 text-fuchsia-400' : ''} />
+                      </button>
+                      <button className={`${primary} flex items-center gap-1 px-3 py-2 text-sm`} onClick={() => setPending({ result: r })} aria-label={`Quero essa: ${r.title}`}><Mic size={16} />Quero essa</button>
+                    </div>
+                  </div>
+                )
+              })}
+              {musicView === 'search' && more && <button className={btn} disabled={busy} onClick={() => void doSearch(q, more)}>{busy ? 'Carregando…' : 'Mais resultados'}</button>}
+            </div>
+          )}
+          {!party && musicView === 'search' && busy && !results.length && <p className="mt-4 text-white/60">Pesquisando…</p>}
+          {!party && musicView === 'search' && empty && !busy && <p className="mt-4 text-white/60">Nenhum resultado. Tente outro nome ou cole o link do vídeo.</p>}
         </section>
 
         {!party && (

@@ -66,6 +66,20 @@ export function mergeResults(prev: Result[], more: Result[]): Result[] {
   return out
 }
 
+export function mostSungYouTubeSongs(history: HistoryItem[]) {
+  const songs = new Map<string, { result: Result; count: number; at: number }>()
+  for (const { source, videoId, title, channel, thumb, at } of history) {
+    if ((source && source !== 'youtube') || !/^[\w-]{11}$/.test(videoId)) continue
+    const entry = songs.get(videoId)
+    if (entry) {
+      entry.count++
+    } else {
+      songs.set(videoId, { result: { videoId, title, channel, thumb }, count: 1, at })
+    }
+  }
+  return [...songs.values()].sort((a, b) => b.count - a.count || b.at - a.at).slice(0, 12)
+}
+
 type Page = { items: Result[]; next?: string }
 // Cache só de pesquisas bem-sucedidas: memória + sessionStorage (some ao fechar a aba), validade de 1 h, até 40 entradas.
 const TTL = 60 * 60 * 1000, MAX = 40, PFX = 'kp:sc:'
