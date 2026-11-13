@@ -9,7 +9,9 @@ const actionStyle = 'rounded-xl bg-violet-700 px-4 py-3 font-semibold hover:bg-v
 export default function Guest({ room }: { room: string }) {
   const [ready, setReady] = useState(false)
   const [status, setStatus] = useState('Conectando à sala…')
-  const [name, setName] = useState<string>(() => load('kp:guest-name', ''))
+  const profileKey = `kp:guest-profile:${room}`
+  const [profile, setProfile] = useState<string>(() => load(profileKey, ''))
+  const [name, setName] = useState('')
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Result[]>([])
   const [next, setNext] = useState<string>()
@@ -63,14 +65,28 @@ export default function Guest({ room }: { room: string }) {
     }
   }
 
+  useEffect(() => {
+    const syncProfile = (event: StorageEvent) => {
+      if (event.key === profileKey || event.key === null) setProfile(load(profileKey, ''))
+    }
+    window.addEventListener('storage', syncProfile)
+    return () => window.removeEventListener('storage', syncProfile)
+  }, [profileKey])
+
+  function joinRoom() {
+    const singer = load<string>(profileKey, '') || name.replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 24)
+    if (!singer) return
+    save(profileKey, singer)
+    setProfile(singer)
+  }
+
   async function submit() {
-    if (!selected || !name.trim() || sending) return
+    if (!selected || !profile || sending) return
     setSending(true)
     setStatus('')
     try {
-      await roomRequest('submit', { room, requestId: requestId.current, song: { ...selected, singer: name.trim() } })
-      save('kp:guest-name', name.trim())
-      setStatus(`“${selected.title}” entrou na fila para ${name.trim()}.`)
+      await roomRequest('submit', { room, requestId: requestId.current, song: { ...selected, singer: profile } })
+      setStatus(`“${selected.title}” entrou na fila para ${profile}.`)
       setSelected(null)
     } catch (error) {
       setStatus((error as Error).message)
@@ -84,8 +100,18 @@ export default function Guest({ room }: { room: string }) {
     <main className="min-h-screen bg-[radial-gradient(ellipse_at_top,#2b1163,#0a0720_65%)] px-4 py-6 text-white">
       <div className="mx-auto max-w-xl space-y-4">
         <p className="font-bold text-violet-300">Karaokê Play</p>
-        <h1 className="text-3xl font-extrabold">Escolha sua música</h1>
-        {ready && <>
+        <h1 className="text-3xl font-extrabold">{ready && !profile ? 'Entre na sala' : 'Escolha sua música'}</h1>
+        {ready && !profile && (
+          <form className="space-y-3 rounded-2xl bg-white/10 p-4" onSubmit={event => { event.preventDefault(); joinRoom() }}>
+            <label className="block">
+              <span className="text-sm text-violet-100">Qual é o seu nome ou apelido?</span>
+              <input className={`${inputStyle} mt-1 w-full`} placeholder="Nome ou apelido" value={name} onChange={event => setName(event.target.value)} autoComplete="nickname" required maxLength={24} />
+            </label>
+            <button className={actionStyle} disabled={!name.trim()}>Entrar na sala</button>
+          </form>
+        )}
+        {ready && profile && <>
+          <p className="text-sm text-violet-200">Cantando como <strong className="text-white">{profile}</strong></p>
           <form className="flex gap-2" onSubmit={event => { event.preventDefault(); void search(query) }}>
             <input className={`${inputStyle} flex-1`} aria-label="Pesquisar música ou colar link" placeholder="Música, artista ou link" value={query} onChange={event => setQuery(event.target.value)} />
             <button className={actionStyle} aria-label="Pesquisar"><Search size={20} /></button>
@@ -96,19 +122,16 @@ export default function Guest({ room }: { room: string }) {
           {selected && (
             <form ref={orderForm} className="space-y-3 rounded-2xl border border-violet-500/60 bg-[#1b1040] p-4" onSubmit={event => { event.preventDefault(); void submit() }}>
               <p className="font-semibold">{selected.title}</p>
-              <label className="block">
-                <span className="text-sm text-violet-100">Quem vai cantar?</span>
-                <input className={`${inputStyle} mt-1 w-full`} placeholder="Nome ou apelido" value={name} onChange={event => setName(event.target.value)} required maxLength={24} disabled={sending} />
-              </label>
+              <p className="text-sm text-violet-200">Cantor(a) <strong className="text-white">{profile}</strong></p>
               <div className="flex flex-wrap gap-2">
-                <button className={actionStyle} disabled={sending || !name.trim()}>{sending ? 'Enviando…' : 'Adicionar à fila'}</button>
+                <button className={actionStyle} disabled={sending}>{sending ? 'Enviando…' : 'Adicionar à fila'}</button>
                 <button type="button" className="rounded-xl bg-white/10 px-4 py-3" disabled={sending} onClick={() => setSelected(null)}>Cancelar</button>
               </div>
             </form>
           )}
         </>}
         {status && <p role="status" className="rounded-xl bg-white/10 p-3">{status}</p>}
-        {ready && <>
+        {ready && profile && <>
           {searching && <p role="status">Pesquisando…</p>}
           <div className="space-y-2">
             {results.map(song => (
