@@ -467,7 +467,7 @@ export default function App() {
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p>{nextUp && <button className={primary} onClick={() => startRef.current()}>Iniciar karaokê</button>}</Ov>}
             {overlay}
-            {party && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
+            {party && roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
           <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'flex flex-wrap items-center gap-3'}`}>
             <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'min-w-0 flex-1'}>
