@@ -8,7 +8,10 @@ type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN'
 type QueueResult = Result & { source?: Song['source']; fileName?: string }
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
 type MusicView = 'search' | 'favorites' | 'mostSung'
-const genres = ['Pagode', 'Sertanejo', 'Samba', 'MPB', 'Rock nacional', 'Forró', 'Gospel', 'Internacional']
+const genres = [
+  'Pagode', 'Sertanejo', 'Samba', 'MPB', 'Rock nacional', 'Rock internacional',
+  'Forró', 'Gospel', 'Funk', 'Infantil', 'Internacional',
+]
 const musicViews: { value: MusicView; label: string }[] = [
   { value: 'search', label: 'Busca' },
   { value: 'favorites', label: 'Favoritas' },
