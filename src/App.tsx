@@ -279,10 +279,6 @@ export default function App() {
       }
     } catch (e: any) { if (my === searchSeq.current) setNote(e.message) } finally { if (my === searchSeq.current) setBusy(false) }
   }
-  const searchGenre = (genre: string) => {
-    setQ(genre)
-    void doSearch(genre)
-  }
   const toggleFavorite = (result: Result) => setFavorites(previous =>
     previous.some(item => item.videoId === result.videoId)
       ? previous.filter(item => item.videoId !== result.videoId)
@@ -480,7 +476,7 @@ export default function App() {
                 <div role="group" aria-label="Pesquisar por estilo" className="flex flex-wrap gap-2">
                   {genres.map(genre => (
                     <button key={genre} type="button" className="rounded-full bg-white/10 px-3 py-2 text-sm hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400"
-                      onClick={() => searchGenre(genre)}>{genre}</button>
+                      onClick={() => void doSearch(genre)}>{genre}</button>
                   ))}
                 </div>
               )}
