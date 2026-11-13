@@ -1,17 +1,15 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw, Heart } from 'lucide-react'
-import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, searchYT, oembed, buildTerm, mergeResults, mostSungYouTubeSongs } from './lib'
+import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, genres, searchYT, oembed, buildTerm, mergeResults, mostSungYouTubeSongs } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
+import RoomPanel from './RoomPanel'
+import { RoomError, roomRequest, type QueueState, type RoomOwner } from './room'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type QueueResult = Result & { source?: Song['source']; fileName?: string }
 type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
 type MusicView = 'search' | 'favorites' | 'mostSung'
-const genres = [
-  'Pagode', 'Sertanejo', 'Samba', 'MPB', 'Rock nacional', 'Rock internacional',
-  'Forró', 'Gospel', 'Funk', 'Infantil', 'Internacional',
-]
 const musicViews: { value: MusicView; label: string }[] = [
   { value: 'search', label: 'Busca' },
   { value: 'favorites', label: 'Favoritas' },
@@ -82,7 +80,20 @@ function SingerModal({ title, thumb, suggestions, onConfirm, onCancel }: {
 
 export default function App() {
   const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULTS, ...load('kp:settings', {}) }))
-  const [queue, setQueue] = useState<Song[]>(() => load('kp:queue', []))
+  const [queueState, setQueueState] = useState<QueueState>(() => load('kp:queue-state', {
+    songs: load('kp:queue', []), room: '', cursor: 0,
+  }))
+  const queue = queueState.songs
+  const setQueue = (update: Song[] | ((songs: Song[]) => Song[])) => {
+    setQueueState(previous => ({ ...previous, songs: typeof update === 'function' ? update(previous.songs) : update }))
+  }
+  const [room, setRoom] = useState<RoomOwner | null>(() => load('kp:room-owner', null))
+  const [roomPanelOpen, setRoomPanelOpen] = useState(false)
+  const [syncMessage, setSyncMessage] = useState('')
+  const updateRoom = (value: RoomOwner | null) => {
+    save('kp:room-owner', value)
+    setRoom(value)
+  }
   const [history, setHistory] = useState<HistoryItem[]>(() => load('kp:history', []))
   const [favorites, setFavorites] = useState<Result[]>(() => load('kp:favorites', []))
   const [musicView, setMusicView] = useState<MusicView>('search')
@@ -140,7 +151,48 @@ export default function App() {
   }
 
   useEffect(() => save('kp:settings', settings), [settings])
-  useEffect(() => save('kp:queue', queue), [queue])
+  useLayoutEffect(() => {
+    save('kp:queue-state', queueState)
+    save('kp:queue', queue)
+  }, [queueState, queue])
+
+  useEffect(() => {
+    if (!room) return
+    const roomId = room.room
+    const credentials = { ...room }
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout>
+    let cursor = queueState.room === room.room ? queueState.cursor : 0
+    async function poll() {
+      try {
+        const reply = await roomRequest<{ songs: Song[]; cursor: number }>('poll', { ...credentials, cursor }, controller.signal)
+        if (controller.signal.aborted) return
+        cursor = reply.cursor
+        setSyncMessage('')
+        if (reply.songs.length) {
+          setQueueState(previous => {
+            const known = new Set(previous.songs.map(song => song.id))
+            return {
+              songs: [...previous.songs, ...reply.songs.filter(song => !known.has(song.id))],
+              room: roomId,
+              cursor: reply.cursor,
+            }
+          })
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return
+        if (error instanceof RoomError && error.code === 'closed') {
+          updateRoom(null)
+          setSyncMessage(error.message)
+          return
+        }
+        setSyncMessage('Reconectando os pedidos pelo celular…')
+      }
+      timer = setTimeout(poll, document.hidden ? 12000 : 3500)
+    }
+    void poll()
+    return () => { controller.abort(); clearTimeout(timer) }
+  }, [room])
   useEffect(() => save('kp:history', history), [history])
   useEffect(() => save('kp:favorites', favorites), [favorites])
   useEffect(() => save('kp:singer', singer), [singer])
@@ -204,9 +256,9 @@ export default function App() {
     return true
   }
   startRef.current = () => {
-    const [n, ...rest] = queueRef.current
+    const [n] = queueRef.current
     if (!n) { setCurrent(null); setPhase('IDLE'); return }
-    if (play(n)) setQueue(rest)
+    if (play(n)) setQueue(songs => songs.filter(song => song.id !== n.id))
     else setPhase('IDLE')
   }
   const advance = () => {
@@ -401,6 +453,7 @@ export default function App() {
               className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
             <button className={primary} aria-label="Pesquisar"><Search size={20} /></button>
           </form>
+          <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>QR Code</button>
           <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
           <button className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com ajuste de tom)"><Upload size={20} /></button>
           <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={20} /></button>
@@ -437,6 +490,8 @@ export default function App() {
               {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" title="Pular música" onClick={skip}><SkipForward /></button>}
               {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
             </div>
+            {((!party && roomPanelOpen) || (party && room)) &&
+              <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} />}
             {party && current && toneDisabled && <p role="status" className="text-sm text-amber-200">Tom indisponível: conecte e autorize a extensão KP Tom.</p>}
           </div>
           {!party && current && (

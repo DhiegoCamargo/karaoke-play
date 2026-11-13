@@ -34,3 +34,10 @@ O controle de tom permite subir/descer em semitons e **Restaurar** ao tom origin
 - Testado pelo autor no Chromebook/StackBlitz (relato): YouTube, MP4 com SoundTouch, KP Tom, fila, nota, ranking, contagem.
 - **Não verificado**: build de produção (`npm run build`), pesquisa real na Vercel, o modal "Quero essa", celular, Safari/Firefox, TVs.
 - Pendente: limite de uso por IP (em avaliação), catálogo JSON, separar `App.tsx` em componentes.
+
+
+## Pedidos de música por QR Code
+
+Conecte **Upstash Redis** ao projeto no Marketplace da Vercel e habilite as variáveis de conexão no ambiente **Preview**. A função `api/room.ts` lê `UPSTASH_REDIS_REST_URL` e `UPSTASH_REDIS_REST_TOKEN` (ou `KV_REST_API_URL` e `KV_REST_API_TOKEN`). Depois de conectar o banco, faça um novo deployment da branch. Em um teste com celulares, todos precisam conseguir abrir o endereço da prévia.
+
+No computador do karaokê, clique em **QR Code** e **Abrir sala por QR Code**. A TV mostra o código no modo festa. Os convidados abrem a página pelo celular, escolhem um vídeo do YouTube, informam o nome e enviam o pedido. Os pedidos chegam ao fim da fila do anfitrião em poucos segundos. O anfitrião controla a ordem e a reprodução. **Encerrar pedidos** fecha o link da sala. A sala também expira após oito horas.

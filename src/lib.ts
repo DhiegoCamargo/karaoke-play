@@ -1,3 +1,8 @@
+export const genres = [
+  'Pagode', 'Sertanejo', 'Samba', 'MPB', 'Rock nacional', 'Rock internacional',
+  'Forró', 'Gospel', 'Funk', 'Infantil', 'Internacional',
+]
+
 export type Result = { videoId: string; title: string; channel: string; thumb: string }
 export type Source = 'youtube' | 'file' | 'library'
 export type Song = Result & { id: string; singer: string; source?: Source; fileName?: string; url?: string }
