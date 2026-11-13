@@ -467,6 +467,7 @@ export default function App() {
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p>{nextUp && <button className={primary} onClick={() => startRef.current()}>Iniciar karaokê</button>}</Ov>}
             {overlay}
+            {party && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
           <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'flex flex-wrap items-center gap-3'}`}>
             <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'min-w-0 flex-1'}>
@@ -490,7 +491,7 @@ export default function App() {
               {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" title="Pular música" onClick={skip}><SkipForward /></button>}
               {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
             </div>
-            {((!party && roomPanelOpen) || (party && room)) &&
+            {!party && roomPanelOpen &&
               <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} />}
             {party && current && toneDisabled && <p role="status" className="text-sm text-amber-200">Tom indisponível: conecte e autorize a extensão KP Tom.</p>}
           </div>
