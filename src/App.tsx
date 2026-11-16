@@ -215,6 +215,14 @@ export default function App() {
       setExtState(prev => (diagOpen.current || prev?.needsActivation !== st?.needsActivation || prev?.lastError !== st?.lastError ? st : prev))
     })
     yt.current = new YouTubePlayback('yt', ev, (iframe) => {
+      iframe.removeAttribute('allowfullscreen')
+      iframe.setAttribute('allowfullscreen', 'false')
+      const allow = (iframe.getAttribute('allow') ?? '')
+        .split(';')
+        .map(item => item.trim())
+        .filter(item => item && !item.startsWith('fullscreen'))
+        .join('; ')
+      iframe.setAttribute('allow', allow)
       ext.attach(iframe)
       // A extensão comunica a presença a partir do iframe já carregado.
       void ext.detect()
@@ -470,7 +478,7 @@ export default function App() {
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov className="kp-overlay-intro"><div className="kp-stage-photo" aria-hidden="true" /><div className="kp-stage-content"><span className="kp-stage-pill">✦ A NOITE É SUA</span><p className="kp-stage-title">{nextUp ? 'A fila está pronta. Solte a voz!' : 'Todo mundo tem seu momento de estrela.'}</p><p className="kp-stage-copy">{nextUp ? `${queue.length} ${queue.length === 1 ? 'música espera' : 'músicas esperam'} por você. A reprodução só começa quando você iniciar.` : 'Encontre sua música favorita, chame os amigos e deixe o palco fazer o resto.'}</p>{nextUp && <button className={primary} onClick={() => startRef.current()}><Play size={18} /> Iniciar karaokê</button>}</div></Ov>}
             {overlay}
-            {party && roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
+            {roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
           <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'kp-now-wrap'}`}>
             <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'kp-now-info min-w-0'}>
@@ -501,7 +509,7 @@ export default function App() {
                 <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>
               </>}
             </div>
-            {!party && roomPanelOpen &&
+            {!party && roomPanelOpen && !room &&
               <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} />}
             {party && current && toneDisabled && <p role="status" className="text-sm text-amber-200">Tom indisponível: conecte e autorize a extensão KP Tom.</p>}
           </div>
