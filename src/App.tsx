@@ -454,49 +454,17 @@ export default function App() {
               </div>
             </div>
             <div className="kp-header-actions">
-              <span className="kp-ready"><span /> SISTEMA PRONTO</span>
+              <span className="kp-ready" title="Sistema pronto"><span /> PRONTO</span>
               <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>QR Code</button>
               <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={18} /> Modo TV</button>
               <button className={btn} onClick={() => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()} aria-label="Tela cheia"><Maximize size={18} /></button>
             </div>
           </header>
 
-          <section className="kp-shell kp-intro">
-            <div className="kp-welcome">
-              <div>
-                <span className="kp-eyebrow">✦ A SUA CENTRAL DE KARAOKÊ</span>
-                <h2>O palco é <em>todo seu.</em></h2>
-                <p>Escolha a música, chame os amigos e faça a noite acontecer.</p>
-              </div>
-              <div className="kp-stats" aria-label="Resumo da sessão">
-                <div><ListMusic size={18} /><strong>{queue.length}</strong><small>na fila</small></div>
-                <div><History size={18} /><strong>{history.length}</strong><small>cantadas</small></div>
-                <div><Trophy size={18} /><strong>{rank.length}</strong><small>no ranking</small></div>
-              </div>
-            </div>
-
-            <form className="kp-quick-search" onSubmit={e => { e.preventDefault(); void doSearch(q) }}>
-              <label className="kp-field">
-                <span>QUEM VAI CANTAR?</span>
-                <input aria-label="Nome do cantor" value={singer} onChange={e => setSinger(e.target.value)} placeholder="Nome ou apelido" maxLength={24} />
-              </label>
-              <label className="kp-field kp-field-grow">
-                <span>QUAL MÚSICA VAMOS CANTAR?</span>
-                <div className="kp-search-box">
-                  <Search size={18} />
-                  <input aria-label="Pesquisar música ou colar link" value={q} onChange={e => setQ(e.target.value)} placeholder="Música, artista ou link do YouTube" />
-                </div>
-              </label>
-              <button className={primary} aria-label="Pesquisar"><Search size={18} /> Pesquisar</button>
-              <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
-              <button type="button" className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com ajuste de tom)"><Upload size={18} /> Arquivo local</button>
-            </form>
-          </section>
         </>
       )}
       <main className={party ? 'mx-auto flex h-dvh max-w-[1920px] flex-col p-3 sm:p-4' : 'kp-shell kp-main-grid'}>
         <section className={party ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'kp-main-column min-w-0'}>
-          {!party && <div className="kp-section-title"><div><span className="kp-eyebrow">● SEU PALCO</span><h3>Palco principal</h3></div><span>Pronto para a próxima apresentação</span></div>}
           <div aria-label="Área do vídeo" className={`kp-stage relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
@@ -563,6 +531,26 @@ export default function App() {
               )}
               <label className="flex items-center gap-2"><input type="checkbox" className="h-5 w-5" checked={keep} onChange={e => setKeep(e.target.checked)} />Manter tom na próxima música</label>
             </div>
+          )}
+          {!party && (
+            <section className="kp-compact-search" aria-label="Escolher próxima música">
+              <form onSubmit={e => { e.preventDefault(); void doSearch(q) }}>
+                <label className="kp-compact-field kp-compact-singer">
+                  <span>Quem vai cantar?</span>
+                  <input aria-label="Nome do cantor" value={singer} onChange={e => setSinger(e.target.value)} placeholder="Nome ou apelido" maxLength={24} />
+                </label>
+                <label className="kp-compact-field kp-compact-song">
+                  <span>Escolher música</span>
+                  <div className="kp-compact-song-input">
+                    <Search size={17} />
+                    <input aria-label="Pesquisar música ou colar link" value={q} onChange={e => setQ(e.target.value)} placeholder="Música, artista ou link do YouTube" />
+                  </div>
+                </label>
+                <button className={primary} aria-label="Pesquisar"><Search size={17} /><span>Pesquisar</span></button>
+                <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
+                <button type="button" className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar arquivo local" title="Arquivo local"><Upload size={17} /><span className="kp-btn-label">Arquivo</span></button>
+              </form>
+            </section>
           )}
           {!party && note && phase !== 'ERROR' && <p role="status" className="mt-2 rounded-lg bg-fuchsia-500/10 p-2 text-sm">{note}</p>}
           {!party && (
