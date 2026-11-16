@@ -528,7 +528,10 @@ export default function App() {
                 <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)} aria-label={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'} title={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'}>QR Code</button>
                 <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Ativar modo TV" title="Ativar modo TV"><Tv size={18} /> Modo TV</button>
               </>}
-              {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
+              {party && <>
+                <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)} aria-label={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'} title={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'}>QR Code</button>
+                <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>
+              </>}
             </div>
             {!party && roomPanelOpen &&
               <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} />}
