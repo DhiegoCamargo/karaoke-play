@@ -251,3 +251,20 @@ body{margin:0;background:var(--kp-bg);font-family:'DM Sans',system-ui,sans-serif
 @media (max-width:1050px){
   .kp-main-grid{grid-template-columns:1fr}
 }
+
+/* Overlays funcionais voltam ao centro; apenas a abertura usa composição à esquerda */
+.kp-stage .kp-overlay{
+  align-items:center!important;
+  justify-content:center!important;
+  text-align:center!important;
+  padding-left:1rem!important;
+  padding-right:1rem!important;
+}
+.kp-stage .kp-overlay-intro{
+  align-items:flex-start!important;
+  text-align:left!important;
+  padding-left:clamp(28px,5vw,78px)!important;
+}
+.kp-stage .kp-overlay-intro .kp-stage-content{
+  align-items:flex-start;
+}
