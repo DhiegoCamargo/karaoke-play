@@ -504,8 +504,8 @@ export default function App() {
             {overlay}
             {party && roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
-          <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'flex flex-wrap items-center gap-3'}`}>
-            <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'min-w-0 flex-1'}>
+          <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'kp-now-wrap'}`}>
+            <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'kp-now-info min-w-0'}>
               <div className="min-w-0" aria-label="Apresentação atual">
                 <p title={current?.title} className={`truncate font-bold ${party ? 'text-2xl lg:text-3xl' : 'text-xl'}`}>{current?.title ?? 'Nenhuma música tocando'}</p>
                 {current && <p title={`Cantor(a): ${current.singer}`} className={`truncate font-semibold text-white ${party ? 'mt-1 text-xl lg:text-2xl' : 'text-lg'}`}>Cantor(a): {current.singer}</p>}
@@ -518,9 +518,9 @@ export default function App() {
                   </> : <p className="text-violet-100">Fila vazia</p>}
                   <p className="text-sm text-violet-200">{queue.length} na fila</p>
                 </div>
-              ) : <p className="truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>}
+              ) : <p className="kp-next-line truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>}
             </div>
-            <div className={`flex flex-wrap items-center gap-3 ${party ? '[&>button]:min-h-14 [&>button]:min-w-14 [&>button]:text-xl' : ''}`}>
+            <div className={`flex flex-wrap items-center gap-3 ${party ? '[&>button]:min-h-14 [&>button]:min-w-14 [&>button]:text-xl' : 'kp-now-actions'}`}>
               {party && current && toneControls(true)}
               {(phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} title={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
               {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" title="Pular música" onClick={skip}><SkipForward /></button>}
@@ -531,7 +531,7 @@ export default function App() {
             {party && current && toneDisabled && <p role="status" className="text-sm text-amber-200">Tom indisponível: conecte e autorize a extensão KP Tom.</p>}
           </div>
           {!party && current && (
-            <div className="mt-3 space-y-2 rounded-xl bg-white/5 p-3 text-sm">
+            <div className="kp-tone-panel mt-3 space-y-2 rounded-xl bg-white/5 p-3 text-sm">
               {toneControls()}
               {source === 'youtube' && (
                 <div className="space-y-1 text-white/70">
