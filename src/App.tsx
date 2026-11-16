@@ -215,8 +215,8 @@ export default function App() {
       setExtState(prev => (diagOpen.current || prev?.needsActivation !== st?.needsActivation || prev?.lastError !== st?.lastError ? st : prev))
     })
     yt.current = new YouTubePlayback('yt', ev, (iframe) => {
+      iframe.allowFullscreen = false
       iframe.removeAttribute('allowfullscreen')
-      iframe.setAttribute('allowfullscreen', 'false')
       const allow = (iframe.getAttribute('allow') ?? '')
         .split(';')
         .map(item => item.trim())
