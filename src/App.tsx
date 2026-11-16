@@ -524,6 +524,10 @@ export default function App() {
               {party && current && toneControls(true)}
               {(phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} title={phase === 'PLAYING' ? 'Pausar' : 'Continuar'} onClick={() => phase === 'PLAYING' ? player.current?.pause() : player.current?.play()}>{phase === 'PLAYING' ? <Pause /> : <Play />}</button>}
               {(phase === 'LOADING' || phase === 'PLAYING' || phase === 'PAUSED') && <button className={btn} aria-label="Pular música" title="Pular música" onClick={skip}><SkipForward /></button>}
+              {!party && <>
+                <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)} aria-label={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'} title={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'}>QR Code</button>
+                <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Ativar modo TV" title="Ativar modo TV"><Tv size={18} /> Modo TV</button>
+              </>}
               {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
             </div>
             {!party && roomPanelOpen &&
