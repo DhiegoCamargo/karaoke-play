@@ -20,8 +20,8 @@ const LOCAL_THUMB = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http
 const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)]
 const cheer = (n: number) => pick(n >= 95 ? ['Você arrasou no palco!', 'Nota de estrela!'] : n >= 85 ? ['Que apresentação!', 'O público foi à loucura!'] : ['Boa! Quem canta seus males espanta!', 'Divertido demais, bora de novo!'])
 
-function Ov({ children }: { children: ReactNode }) {
-  return <div className="kp-overlay absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-4 text-center">{children}</div>
+function Ov({ children, className = '' }: { children: ReactNode; className?: string }) {
+  return <div className={`kp-overlay absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-4 text-center ${className}`}>{children}</div>
 }
 function Counter({ n, anim }: { n: number; anim: boolean }) {
   const [v, setV] = useState(anim ? 0 : n)
@@ -500,7 +500,7 @@ export default function App() {
           <div aria-label="Área do vídeo" className={`kp-stage relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
-            {!current && phase === 'IDLE' && <Ov><div className="kp-stage-photo" aria-hidden="true" /><div className="kp-stage-content"><span className="kp-stage-pill">✦ A NOITE É SUA</span><p className="kp-stage-title">{nextUp ? 'A fila está pronta. Solte a voz!' : 'Todo mundo tem seu momento de estrela.'}</p><p className="kp-stage-copy">{nextUp ? `${queue.length} ${queue.length === 1 ? 'música espera' : 'músicas esperam'} por você. A reprodução só começa quando você iniciar.` : 'Encontre sua música favorita, chame os amigos e deixe o palco fazer o resto.'}</p>{nextUp && <button className={primary} onClick={() => startRef.current()}><Play size={18} /> Iniciar karaokê</button>}</div></Ov>}
+            {!current && phase === 'IDLE' && <Ov className="kp-overlay-intro"><div className="kp-stage-photo" aria-hidden="true" /><div className="kp-stage-content"><span className="kp-stage-pill">✦ A NOITE É SUA</span><p className="kp-stage-title">{nextUp ? 'A fila está pronta. Solte a voz!' : 'Todo mundo tem seu momento de estrela.'}</p><p className="kp-stage-copy">{nextUp ? `${queue.length} ${queue.length === 1 ? 'música espera' : 'músicas esperam'} por você. A reprodução só começa quando você iniciar.` : 'Encontre sua música favorita, chame os amigos e deixe o palco fazer o resto.'}</p>{nextUp && <button className={primary} onClick={() => startRef.current()}><Play size={18} /> Iniciar karaokê</button>}</div></Ov>}
             {overlay}
             {party && roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
