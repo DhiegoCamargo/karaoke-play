@@ -21,7 +21,7 @@ const pick = (a: string[]) => a[Math.floor(Math.random() * a.length)]
 const cheer = (n: number) => pick(n >= 95 ? ['Você arrasou no palco!', 'Nota de estrela!'] : n >= 85 ? ['Que apresentação!', 'O público foi à loucura!'] : ['Boa! Quem canta seus males espanta!', 'Divertido demais, bora de novo!'])
 
 function Ov({ children }: { children: ReactNode }) {
-  return <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#0a0720]/95 p-4 text-center">{children}</div>
+  return <div className="kp-overlay absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 p-4 text-center">{children}</div>
 }
 function Counter({ n, anim }: { n: number; anim: boolean }) {
   const [v, setV] = useState(anim ? 0 : n)
@@ -33,8 +33,8 @@ function Counter({ n, anim }: { n: number; anim: boolean }) {
   }, [n, anim])
   return <div className="text-7xl font-black text-fuchsia-400 drop-shadow-[0_0_24px_#d946ef] sm:text-9xl">{v}<span className="ml-2 text-2xl text-violet-300 sm:text-4xl">PONTOS</span></div>
 }
-const btn = 'rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
-const primary = 'rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
+const btn = 'kp-button rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
+const primary = 'kp-primary rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
 
 function SingerModal({ title, thumb, suggestions, onConfirm, onCancel }: {
   title: string; thumb: string; suggestions: string[]
@@ -50,9 +50,9 @@ function SingerModal({ title, thumb, suggestions, onConfirm, onCancel }: {
   }, [onCancel])
   const ok = name.trim().length > 0
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center" onMouseDown={e => { if (e.target === e.currentTarget) onCancel() }}>
+    <div className="kp-modal-backdrop fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 sm:items-center" onMouseDown={e => { if (e.target === e.currentTarget) onCancel() }}>
       <form role="dialog" aria-modal="true" aria-labelledby="singer-title" onSubmit={e => { e.preventDefault(); if (ok) onConfirm(name) }}
-        className="w-full max-w-md space-y-3 rounded-2xl border border-fuchsia-500/40 bg-[#14093a] p-4 shadow-[0_0_40px_#a21caf66]">
+        className="kp-modal-card w-full max-w-md space-y-3 rounded-2xl border border-fuchsia-500/40 bg-[#14093a] p-4 shadow-[0_0_40px_#a21caf66]">
         <h2 id="singer-title" className="text-lg font-bold">Quem vai cantar?</h2>
         <div className="flex items-center gap-2 rounded-xl bg-white/5 p-2">
           <img src={thumb} alt="" className="h-12 w-20 rounded object-cover" />
@@ -442,30 +442,65 @@ export default function App() {
 
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,#2b1163,#0a0720_65%)] text-white">
+    <div className="kp-app min-h-screen text-white">
       {!party && (
-        <header className="flex flex-wrap items-center gap-2 border-b border-fuchsia-500/20 p-3">
-          <h1 className="bg-gradient-to-r from-violet-400 via-blue-400 to-fuchsia-500 bg-clip-text text-2xl font-extrabold text-transparent">Karaokê Play</h1>
-          <input aria-label="Nome do cantor" value={singer} onChange={e => setSinger(e.target.value)} placeholder="Quem vai cantar?" maxLength={24}
-            className="w-36 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
-          <form className="flex min-w-[220px] flex-1 gap-2" onSubmit={e => { e.preventDefault(); void doSearch(q) }}>
-            <input aria-label="Pesquisar música ou colar link" value={q} onChange={e => setQ(e.target.value)} placeholder="Música, artista ou link do YouTube"
-              className="min-w-0 flex-1 rounded-xl bg-white/10 px-3 py-3 outline-none ring-fuchsia-400 focus:ring-2" />
-            <button className={primary} aria-label="Pesquisar"><Search size={20} /></button>
-          </form>
-          <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>QR Code</button>
-          <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
-          <button className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com ajuste de tom)"><Upload size={20} /></button>
-          <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={20} /></button>
-          <button className={btn} onClick={() => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()} aria-label="Tela cheia"><Maximize size={20} /></button>
-        </header>
+        <>
+          <header className="kp-header">
+            <div className="kp-brand" aria-label="Karaokê Play">
+              <div className="kp-brand-icon"><Mic size={22} /></div>
+              <div>
+                <h1>Karaokê Play</h1>
+                <p>SUA FESTA · SEU PALCO</p>
+              </div>
+            </div>
+            <div className="kp-header-actions">
+              <span className="kp-ready"><span /> SISTEMA PRONTO</span>
+              <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>QR Code</button>
+              <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Modo festa"><Tv size={18} /> Modo TV</button>
+              <button className={btn} onClick={() => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()} aria-label="Tela cheia"><Maximize size={18} /></button>
+            </div>
+          </header>
+
+          <section className="kp-shell kp-intro">
+            <div className="kp-welcome">
+              <div>
+                <span className="kp-eyebrow">✦ A SUA CENTRAL DE KARAOKÊ</span>
+                <h2>O palco é <em>todo seu.</em></h2>
+                <p>Escolha a música, chame os amigos e faça a noite acontecer.</p>
+              </div>
+              <div className="kp-stats" aria-label="Resumo da sessão">
+                <div><ListMusic size={18} /><strong>{queue.length}</strong><small>na fila</small></div>
+                <div><History size={18} /><strong>{history.length}</strong><small>cantadas</small></div>
+                <div><Trophy size={18} /><strong>{rank.length}</strong><small>no ranking</small></div>
+              </div>
+            </div>
+
+            <form className="kp-quick-search" onSubmit={e => { e.preventDefault(); void doSearch(q) }}>
+              <label className="kp-field">
+                <span>QUEM VAI CANTAR?</span>
+                <input aria-label="Nome do cantor" value={singer} onChange={e => setSinger(e.target.value)} placeholder="Nome ou apelido" maxLength={24} />
+              </label>
+              <label className="kp-field kp-field-grow">
+                <span>QUAL MÚSICA VAMOS CANTAR?</span>
+                <div className="kp-search-box">
+                  <Search size={18} />
+                  <input aria-label="Pesquisar música ou colar link" value={q} onChange={e => setQ(e.target.value)} placeholder="Música, artista ou link do YouTube" />
+                </div>
+              </label>
+              <button className={primary} aria-label="Pesquisar"><Search size={18} /> Pesquisar</button>
+              <input ref={fileIn} type="file" accept="video/mp4,audio/mpeg,video/*,audio/*" className="hidden" onChange={e => onFiles(e.target.files)} />
+              <button type="button" className={btn} onClick={() => fileIn.current?.click()} aria-label="Adicionar MP4 local" title="MP4 local (com ajuste de tom)"><Upload size={18} /> Arquivo local</button>
+            </form>
+          </section>
+        </>
       )}
-      <main className={party ? 'mx-auto flex h-dvh max-w-[1920px] flex-col p-3 sm:p-4' : 'grid gap-4 p-3 lg:grid-cols-[1fr_380px]'}>
-        <section className={party ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'min-w-0'}>
-          <div aria-label="Área do vídeo" className={`relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
+      <main className={party ? 'mx-auto flex h-dvh max-w-[1920px] flex-col p-3 sm:p-4' : 'kp-shell kp-main-grid'}>
+        <section className={party ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'kp-main-column min-w-0'}>
+          {!party && <div className="kp-section-title"><div><span className="kp-eyebrow">● SEU PALCO</span><h3>Palco principal</h3></div><span>Pronto para a próxima apresentação</span></div>}
+          <div aria-label="Área do vídeo" className={`kp-stage relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
-            {!current && phase === 'IDLE' && <Ov><p className="text-2xl font-bold">Pesquise uma música, informe seu nome e cante.</p><p className="text-white/60">As notas são sorteadas só por diversão — não avaliam a voz.</p>{nextUp && <button className={primary} onClick={() => startRef.current()}>Iniciar karaokê</button>}</Ov>}
+            {!current && phase === 'IDLE' && <Ov><span className="kp-stage-pill">✦ A NOITE É SUA</span><p className="kp-stage-title">{nextUp ? 'A fila está pronta. Solte a voz!' : 'Todo mundo tem seu momento de estrela.'}</p><p className="kp-stage-copy">{nextUp ? `${queue.length} ${queue.length === 1 ? 'música espera' : 'músicas esperam'} por você. A reprodução só começa quando você iniciar.` : 'Encontre sua música favorita, chame os amigos e deixe o palco fazer o resto.'}</p>{nextUp && <button className={primary} onClick={() => startRef.current()}><Play size={18} /> Iniciar karaokê</button>}</Ov>}
             {overlay}
             {party && roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
@@ -549,7 +584,7 @@ export default function App() {
                 const favorite = favorites.some(item => item.videoId === r.videoId)
                 const count = playCounts.get(r.videoId)
                 return (
-                  <div key={r.videoId} className={`${row} flex-wrap`}>
+                  <div key={r.videoId} className={`kp-result-card ${row} flex-wrap`}>
                     <img src={r.thumb} alt="" className="h-12 w-20 shrink-0 rounded object-cover" />
                     <div className="min-w-[7rem] flex-1">
                       <p className="line-clamp-2 text-sm font-semibold">{r.title}</p>
@@ -574,8 +609,8 @@ export default function App() {
         </section>
 
         {!party && (
-          <aside className="space-y-3">
-            <nav className="flex gap-2">
+          <aside className="kp-sidebar space-y-3">
+            <nav className="kp-tabs flex gap-2">
               {tabBtn('queue', <ListMusic size={20} />, 'Fila')}{tabBtn('rank', <Trophy size={20} />, 'Ranking')}{tabBtn('hist', <History size={20} />, 'Histórico')}
               {tabBtn('cfg', <Cog size={20} />, 'Configurações')}{tabBtn('help', <HelpCircle size={20} />, 'Ajuda KP Tom')}
             </nav>
@@ -583,7 +618,7 @@ export default function App() {
               <div className="space-y-2">
                 {!queue.length && <p className="text-white/60">Fila vazia. Pesquise uma música para começar.</p>}
                 {queue.map((s, i) => (
-                  <div key={s.id} className={row}>
+                  <div key={s.id} className={`kp-queue-card ${row}`}>
                     <img src={s.thumb} alt="" className="h-12 w-20 rounded object-cover" />
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{i + 1}. {s.title}</p><p className="truncate text-xs text-violet-300">{s.singer}</p></div>
                     {current && <button aria-label="Tocar agora" title="Tocar agora" className="p-1" onClick={() => playNow(i)}><Play size={18} /></button>}
