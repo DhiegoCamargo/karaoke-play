@@ -268,3 +268,43 @@ body{margin:0;background:var(--kp-bg);font-family:'DM Sans',system-ui,sans-serif
 .kp-stage .kp-overlay-intro .kp-stage-content{
   align-items:flex-start;
 }
+
+/* Destaque visual dos overlays de contagem e pontuação */
+.kp-stage .kp-overlay:not(.kp-overlay-intro){
+  background:
+    radial-gradient(circle at center, rgba(9,7,28,.62) 0%, rgba(9,7,28,.48) 42%, rgba(5,4,18,.30) 72%, rgba(5,4,18,.20) 100%) !important;
+  backdrop-filter: blur(2px);
+}
+.kp-stage .kp-overlay:not(.kp-overlay-intro)::before{
+  content:"";
+  position:absolute;
+  z-index:-1;
+  width:min(86%,760px);
+  height:min(76%,430px);
+  border-radius:28px;
+  background:linear-gradient(180deg,rgba(12,9,34,.80),rgba(12,8,29,.64));
+  border:1px solid rgba(222,190,255,.18);
+  box-shadow:
+    0 22px 70px rgba(0,0,0,.42),
+    0 0 44px rgba(155,74,223,.16),
+    inset 0 1px 0 rgba(255,255,255,.06);
+}
+.kp-stage .kp-overlay:not(.kp-overlay-intro)>*{
+  position:relative;
+  z-index:1;
+}
+.kp-stage .kp-overlay:not(.kp-overlay-intro) p{
+  text-shadow:0 3px 12px rgba(0,0,0,.72),0 0 18px rgba(0,0,0,.34);
+}
+.kp-stage .kp-overlay:not(.kp-overlay-intro) [aria-live="polite"]{
+  text-shadow:
+    0 4px 18px rgba(0,0,0,.74),
+    0 0 28px rgba(217,70,239,.40);
+}
+@media (max-width:700px){
+  .kp-stage .kp-overlay:not(.kp-overlay-intro)::before{
+    width:92%;
+    height:82%;
+    border-radius:22px;
+  }
+}
