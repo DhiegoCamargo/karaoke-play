@@ -111,7 +111,7 @@ export default function Guest({ room }: { room: string }) {
           </form>
         )}
         {ready && profile && <>
-          <p className="text-sm text-violet-200">Cantando como <strong className="text-white">{profile}</strong></p>
+          <p className="text-sm text-violet-200">Cantando como <strong className="text-white">{profile}</strong> · escolha até 3 músicas</p>
           <form className="flex gap-2" onSubmit={event => { event.preventDefault(); void search(query) }}>
             <input className={`${inputStyle} flex-1`} aria-label="Pesquisar música ou colar link" placeholder="Música, artista ou link" value={query} onChange={event => setQuery(event.target.value)} />
             <button className={actionStyle} aria-label="Pesquisar"><Search size={20} /></button>
@@ -135,7 +135,16 @@ export default function Guest({ room }: { room: string }) {
           {searching && <p role="status">Pesquisando…</p>}
           <div className="space-y-2">
             {results.map(song => (
-              <button key={song.videoId} type="button" disabled={sending} className="flex w-full items-center gap-3 rounded-xl bg-white/10 p-2 text-left hover:bg-white/20" onClick={() => { setSelected(song); setStatus(''); requestId.current = crypto.randomUUID() }}>
+              <button key={song.videoId} type="button" disabled={sending} className="flex w-full items-center gap-3 rounded-xl bg-white/10 p-2 text-left hover:bg-white/20" onClick={() => {
+                setSelected(song)
+                setStatus('')
+                setQuery('')
+                setResults([])
+                setNext(undefined)
+                term.current = ''
+                searchId.current++
+                requestId.current = crypto.randomUUID()
+              }}>
                 <img src={song.thumb} alt="" className="h-12 w-20 shrink-0 rounded object-cover" />
                 <span className="min-w-0 flex-1"><span className="line-clamp-2 font-semibold">{song.title}</span><span className="block truncate text-xs text-violet-200">{song.channel}</span></span>
                 <Mic size={20} aria-hidden="true" />
