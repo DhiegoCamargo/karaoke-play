@@ -36,6 +36,28 @@ function Counter({ n, anim }: { n: number; anim: boolean }) {
 const btn = 'kp-button rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
 const primary = 'kp-primary rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
 
+function interleaveBySinger(songs: Song[]): Song[] {
+  if (songs.length < 2) return songs
+  const order: string[] = []
+  const groups = new Map<string, Song[]>()
+  for (const song of songs) {
+    const key = song.singer.trim().toLocaleLowerCase('pt-BR')
+    if (!groups.has(key)) { groups.set(key, []); order.push(key) }
+    groups.get(key)!.push(song)
+  }
+  if (order.length < 2) return songs
+  const result: Song[] = []
+  let added = true
+  while (added) {
+    added = false
+    for (const key of order) {
+      const song = groups.get(key)?.shift()
+      if (song) { result.push(song); added = true }
+    }
+  }
+  return result
+}
+
 function SingerModal({ title, thumb, suggestions, onConfirm, onCancel }: {
   title: string; thumb: string; suggestions: string[]
   onConfirm: (name: string) => void; onCancel: () => void
@@ -172,8 +194,11 @@ export default function App() {
         if (reply.songs.length) {
           setQueueState(previous => {
             const known = new Set(previous.songs.map(song => song.id))
+            const incoming = reply.songs
+              .filter(song => !known.has(song.id))
+              .map(song => ({ ...song, remote: true }))
             return {
-              songs: [...previous.songs, ...reply.songs.filter(song => !known.has(song.id))],
+              songs: incoming.length ? interleaveBySinger([...previous.songs, ...incoming]) : previous.songs,
               room: roomId,
               cursor: reply.cursor,
             }
@@ -495,10 +520,7 @@ export default function App() {
                 <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)} aria-label={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'} title={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'}>QR Code</button>
                 <button className={btn} onClick={() => { setParty(true); document.documentElement.requestFullscreen?.().catch(() => {}) }} aria-label="Ativar modo TV" title="Ativar modo TV"><Tv size={18} /> Modo TV</button>
               </>}
-              {party && <>
-                <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)} aria-label={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'} title={roomPanelOpen ? 'Ocultar QR Code' : 'Mostrar QR Code'}>QR Code</button>
-                <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>
-              </>}
+              {party && <button className={btn} onClick={() => setParty(false)} aria-label="Sair do modo festa" title="Sair do modo TV"><X /></button>}
             </div>
             {!party && roomPanelOpen && !room &&
               <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} />}
@@ -608,17 +630,12 @@ export default function App() {
               <div className="kp-tv-card-head">
                 <div>
                   <span className="kp-tv-kicker">PEDIDOS PELO CELULAR</span>
-                  <h3>QR Code</h3>
+                  <h3>Escolha sua música</h3>
                 </div>
-                <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>
-                  {roomPanelOpen ? 'Ocultar' : 'Mostrar'}
-                </button>
               </div>
-              {roomPanelOpen ? (
-                room
-                  ? <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />
-                  : <div className="kp-tv-empty"><p>Sala ainda não aberta.</p><button className={primary} onClick={() => setParty(false)}>Abrir na tela principal</button></div>
-              ) : <div className="kp-tv-empty"><p>QR Code oculto.</p></div>}
+              {room
+                ? <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />
+                : <div className="kp-tv-empty"><p>Ative a sala por QR Code na tela principal antes de entrar no Modo TV.</p></div>}
             </section>
 
             <section className="kp-tv-next-card">
