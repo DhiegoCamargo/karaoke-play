@@ -57,8 +57,8 @@ export default function RoomPanel({ room, onRoomChange, syncMessage, tv = false 
   if (tv) {
     return qr ? (
       <div className="pointer-events-none absolute bottom-2 right-2 z-[5] flex flex-col items-center gap-1 rounded-lg border border-violet-300/20 bg-[#0a0720]/92 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,.45)] sm:bottom-3 sm:right-3">
-        <img src={qr} alt="QR Code para escolher uma música no celular" className="h-16 w-16 rounded-sm bg-white p-0.5 sm:h-20 sm:w-20" />
-        <p className="text-[10px] font-semibold text-white/90 sm:text-xs">Escaneie</p>
+        <img src={qr} alt="QR Code para escolher uma música no celular" className="h-28 w-28 rounded-md bg-white p-1 sm:h-32 sm:w-32" />
+        <p className="max-w-36 text-center text-xs font-semibold leading-tight text-white/95 sm:text-sm">Escaneie para escolher sua música</p>
       </div>
     ) : null
   }
