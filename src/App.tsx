@@ -471,14 +471,13 @@ export default function App() {
 
         </>
       )}
-      <main className={party ? 'mx-auto flex h-dvh max-w-[1920px] flex-col p-3 sm:p-4' : 'kp-shell kp-main-grid'}>
-        <section className={party ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'kp-main-column min-w-0'}>
+      <main className={party ? 'kp-tv-shell mx-auto h-dvh max-w-[1920px] p-3 sm:p-4' : 'kp-shell kp-main-grid'}>
+        <section className={party ? 'kp-tv-main flex min-h-0 min-w-0 flex-col' : 'kp-main-column min-w-0'}>
           <div aria-label="Área do vídeo" className={`kp-stage relative overflow-hidden rounded-2xl bg-black shadow-[0_0_40px_#a21caf66] ring-1 ring-fuchsia-500/40 ${party ? 'min-h-[140px] flex-1' : 'aspect-video'}`}>
             <div className={`absolute inset-0 [&_iframe]:h-full [&_iframe]:w-full ${source === 'youtube' ? '' : 'hidden'}`}><div id="yt" /></div>
             <video ref={vid} playsInline className={`absolute inset-0 h-full w-full bg-black ${source === 'youtube' ? 'hidden' : ''}`} />
             {!current && phase === 'IDLE' && <Ov className="kp-overlay-intro"><div className="kp-stage-photo" aria-hidden="true" /><div className="kp-stage-content"><span className="kp-stage-pill">✦ A NOITE É SUA</span><p className="kp-stage-title">{nextUp ? 'A fila está pronta. Solte a voz!' : 'Todo mundo tem seu momento de estrela.'}</p><p className="kp-stage-copy">{nextUp ? `${queue.length} ${queue.length === 1 ? 'música espera' : 'músicas esperam'} por você. A reprodução só começa quando você iniciar.` : 'Encontre sua música favorita, chame os amigos e deixe o palco fazer o resto.'}</p>{nextUp && <button className={primary} onClick={() => startRef.current()}><Play size={18} /> Iniciar karaokê</button>}</div></Ov>}
             {overlay}
-            {roomPanelOpen && room && <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />}
           </div>
           <div className={`mt-3 shrink-0 ${party ? 'space-y-3' : 'kp-now-wrap'}`}>
             <div className={party ? 'grid min-w-0 gap-3 md:grid-cols-2 md:gap-x-8' : 'kp-now-info min-w-0'}>
@@ -486,15 +485,7 @@ export default function App() {
                 <p title={current?.title} className={`truncate font-bold ${party ? 'text-2xl lg:text-3xl' : 'text-xl'}`}>{current?.title ?? 'Nenhuma música tocando'}</p>
                 {current && <p title={`Cantor(a): ${current.singer}`} className={`truncate font-semibold text-white ${party ? 'mt-1 text-xl lg:text-2xl' : 'text-lg'}`}>Cantor(a): {current.singer}</p>}
               </div>
-              {party ? (
-                <div className="min-w-0 space-y-1 text-lg lg:text-xl" aria-label="Próxima apresentação">
-                  {nextUp ? <>
-                    <p title={`Próximo cantor: ${nextUp.singer}`} className="truncate font-semibold text-violet-100">Próximo cantor: {nextUp.singer}</p>
-                    <p title={`Próxima música: ${nextUp.title}`} className="truncate text-white"><span className="text-violet-200">Próxima música:</span> {nextUp.title}</p>
-                  </> : <p className="text-violet-100">Fila vazia</p>}
-                  <p className="text-sm text-violet-200">{queue.length} na fila</p>
-                </div>
-              ) : <p className="kp-next-line truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>}
+              {party ? null : <p className="kp-next-line truncate text-sm text-violet-300">{nextUp ? `Próxima: ${nextUp.singer} — ${nextUp.title}` : 'Fila vazia'} · {queue.length} na fila</p>}
             </div>
             <div className={`flex flex-wrap items-center gap-3 ${party ? '[&>button]:min-h-14 [&>button]:min-w-14 [&>button]:text-xl' : 'kp-now-actions'}`}>
               {party && current && toneControls(true)}
@@ -610,6 +601,48 @@ export default function App() {
           {!party && musicView === 'search' && busy && !results.length && <p className="mt-4 text-white/60">Pesquisando…</p>}
           {!party && musicView === 'search' && empty && !busy && <p className="mt-4 text-white/60">Nenhum resultado. Tente outro nome ou cole o link do vídeo.</p>}
         </section>
+
+        {party && (
+          <aside className="kp-tv-side" aria-label="Painel lateral do modo TV">
+            <section className="kp-tv-qr-card">
+              <div className="kp-tv-card-head">
+                <div>
+                  <span className="kp-tv-kicker">PEDIDOS PELO CELULAR</span>
+                  <h3>QR Code</h3>
+                </div>
+                <button className={btn} aria-expanded={roomPanelOpen} onClick={() => setRoomPanelOpen(open => !open)}>
+                  {roomPanelOpen ? 'Ocultar' : 'Mostrar'}
+                </button>
+              </div>
+              {roomPanelOpen ? (
+                room
+                  ? <RoomPanel room={room} onRoomChange={updateRoom} syncMessage={syncMessage} tv />
+                  : <div className="kp-tv-empty"><p>Sala ainda não aberta.</p><button className={primary} onClick={() => setParty(false)}>Abrir na tela principal</button></div>
+              ) : <div className="kp-tv-empty"><p>QR Code oculto.</p></div>}
+            </section>
+
+            <section className="kp-tv-next-card">
+              <div className="kp-tv-card-head">
+                <div>
+                  <span className="kp-tv-kicker">A SEGUIR</span>
+                  <h3>Próximos cantores</h3>
+                </div>
+                <span className="kp-tv-count">{queue.length} na fila</span>
+              </div>
+              <div className="kp-tv-next-list">
+                {queue.length ? queue.slice(0, 5).map((song, index) => (
+                  <div key={song.id} className="kp-tv-next-item">
+                    <span className="kp-tv-position">{index + 1}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold">{song.singer}</p>
+                      <p className="truncate text-sm text-white/65">{song.title}</p>
+                    </div>
+                  </div>
+                )) : <div className="kp-tv-empty"><p>Nenhuma música na fila.</p></div>}
+              </div>
+            </section>
+          </aside>
+        )}
 
         {!party && (
           <aside className="kp-sidebar space-y-3">
