@@ -678,3 +678,50 @@ body{margin:0;background:var(--kp-bg);font-family:'DM Sans',system-ui,sans-serif
   .kp-tv-shell{grid-template-columns:minmax(0,1fr) 235px!important}
   .kp-tv-qr-card .pointer-events-none img{width:112px!important;height:112px!important}
 }
+
+/* TV: reduzir ainda mais a faixa inferior para ampliar o vídeo */
+.kp-tv-main>.mt-3{
+  margin-top:3px!important;
+  gap:3px!important;
+}
+.kp-tv-main .kp-now-info{
+  padding:0 2px!important;
+}
+.kp-tv-main .kp-now-info [aria-label="Apresentação atual"] p:first-child{
+  font-size:.82rem!important;
+  line-height:1.05!important;
+  font-weight:700!important;
+  margin:0!important;
+}
+.kp-tv-main .kp-now-info [aria-label="Apresentação atual"] p:nth-child(2){
+  font-size:.72rem!important;
+  line-height:1.05!important;
+  margin:1px 0 0!important;
+  opacity:.92;
+}
+.kp-tv-main .kp-now-actions{
+  gap:4px!important;
+  margin-top:0!important;
+}
+.kp-tv-main .kp-now-actions .kp-button,
+.kp-tv-main .kp-now-actions button{
+  min-height:34px!important;
+  min-width:34px!important;
+  padding:4px 7px!important;
+  font-size:.8rem!important;
+  border-radius:9px!important;
+}
+.kp-tv-main [role="group"][aria-label="Controles de tom"]{
+  gap:4px!important;
+}
+.kp-tv-main [role="group"][aria-label="Controles de tom"] b{
+  font-size:.72rem!important;
+}
+.kp-tv-main [role="group"][aria-label="Controles de tom"] output{
+  width:30px!important;
+  font-size:1.1rem!important;
+}
+.kp-tv-main .text-amber-200{
+  font-size:.68rem!important;
+  margin-top:0!important;
+}
