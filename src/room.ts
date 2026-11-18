@@ -7,7 +7,7 @@ const messages: Record<string, string> = {
   closed: 'Esta sala foi encerrada. Peça o QR Code da sessão atual.',
   setup: 'Os pedidos por celular ainda não estão configurados neste endereço.',
   full: 'A sala chegou ao limite de pedidos. Avise o anfitrião.',
-  singer_limit: 'Você já escolheu 3 músicas nesta sala. Agora é hora de deixar os outros cantores escolherem também.',
+  singer_limit: 'Você já escolheu 3 músicas nos últimos 15 minutos. Daqui a pouco poderá escolher mais 3.',
   invalid: 'Confira os dados e tente novamente.',
   forbidden: 'Este navegador não controla esta sala.',
 }
