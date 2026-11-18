@@ -36,7 +36,7 @@ function Counter({ n, anim }: { n: number; anim: boolean }) {
 const btn = 'kp-button rounded-xl bg-white/10 px-4 py-3 font-semibold hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-fuchsia-400'
 const primary = 'kp-primary rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-5 py-3 font-bold shadow-[0_0_18px_#c026d355] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-white'
 
-function interleaveBySinger(songs: Song[]): Song[] {
+function interleaveBySinger(songs: Song[], afterSinger?: string): Song[] {
   if (songs.length < 2) return songs
   const order: string[] = []
   const groups = new Map<string, Song[]>()
@@ -46,6 +46,8 @@ function interleaveBySinger(songs: Song[]): Song[] {
     groups.get(key)!.push(song)
   }
   if (order.length < 2) return songs
+  const previousKey = afterSinger?.trim().toLocaleLowerCase('pt-BR')
+  if (previousKey && order[0] === previousKey) order.push(order.shift()!)
   const result: Song[] = []
   let added = true
   while (added) {
@@ -198,7 +200,7 @@ export default function App() {
               .filter(song => !known.has(song.id))
               .map(song => ({ ...song, remote: true }))
             return {
-              songs: incoming.length ? interleaveBySinger([...previous.songs, ...incoming]) : previous.songs,
+              songs: incoming.length ? interleaveBySinger([...previous.songs, ...incoming], activeSong.current?.singer) : previous.songs,
               room: roomId,
               cursor: reply.cursor,
             }
