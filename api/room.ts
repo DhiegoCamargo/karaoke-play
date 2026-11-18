@@ -15,9 +15,12 @@ local action = ARGV[1]
 if action == 'status' then return '{}' end
 if action == 'submit' then
   local song = cjson.decode(ARGV[2])
+  local singerCount = 0
   for _, entry in ipairs(room.requests) do
     if entry.id == song.id then return '{}' end
+    if entry.singer == song.singer then singerCount = singerCount + 1 end
   end
+  if singerCount >= 3 then return cjson.encode({error = 'singer_limit'}) end
   if #room.requests >= 200 then return cjson.encode({error = 'full'}) end
   table.insert(room.requests, song)
   redis.call('SET', KEYS[1], cjson.encode(room), 'KEEPTTL')
@@ -87,7 +90,7 @@ export default async function handler(req: any, res: any) {
       }
       argument = JSON.stringify({
         id: requestId, videoId, singer, title, channel: field(song.channel, 120),
-        source: 'youtube', thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        source: 'youtube', remote: true, thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
       })
     }
     if (action === 'poll' || action === 'close') {
@@ -98,7 +101,7 @@ export default async function handler(req: any, res: any) {
     }
     const offset = Number.isInteger(cursor) && cursor >= 0 && cursor <= 200 ? cursor : 0
     const reply = JSON.parse(await redis(['EVAL', roomCommand, 1, `kp:room:${room}`, action, argument, offset]))
-    const status = { closed: 404, forbidden: 403, full: 409 }[reply.error as 'closed' | 'forbidden' | 'full'] ?? 200
+    const status = { closed: 404, forbidden: 403, full: 409, singer_limit: 409 }[reply.error as 'closed' | 'forbidden' | 'full' | 'singer_limit'] ?? 200
     if (action === 'poll' && !Array.isArray(reply.songs) && !reply.error) reply.songs = []
     return res.status(status).json(reply)
   } catch {
