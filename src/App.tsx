@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw, Heart } from 'lucide-react'
+import { Search, Play, Pause, SkipForward, Trash2, ArrowUp, ArrowDown, Maximize, Plus, Trophy, ListMusic, Settings as Cog, HelpCircle, History, Tv, X, Upload, Mic, RotateCcw, Heart, Shuffle } from 'lucide-react'
 import { type Song, type Settings, type HistoryItem, type Result, DEFAULTS, load, save, rollScore, videoIdFrom, genres, searchYT, oembed, buildTerm, mergeResults, mostSungYouTubeSongs } from './lib'
 import { YouTubePlayback, LocalPlayback, type Playback, type Events } from './playback'
 import RoomPanel from './RoomPanel'
 import { RoomError, roomRequest, type QueueState, type RoomOwner } from './room'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
+import RandomLibraryPanel from './RandomLibraryPanel'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type QueueResult = Result & { source?: Song['source']; fileName?: string }
-type Tab = 'queue' | 'rank' | 'hist' | 'cfg' | 'help'
+type Tab = 'queue' | 'rank' | 'hist' | 'random' | 'cfg' | 'help'
 type MusicView = 'search' | 'favorites' | 'mostSung'
 const musicViews: { value: MusicView; label: string }[] = [
   { value: 'search', label: 'Busca' },
@@ -667,7 +668,7 @@ export default function App() {
           <aside className="kp-sidebar space-y-3">
             <nav className="kp-tabs flex gap-2">
               {tabBtn('queue', <ListMusic size={20} />, 'Fila')}{tabBtn('rank', <Trophy size={20} />, 'Ranking')}{tabBtn('hist', <History size={20} />, 'Histórico')}
-              {tabBtn('cfg', <Cog size={20} />, 'Configurações')}{tabBtn('help', <HelpCircle size={20} />, 'Ajuda KP Tom')}
+              {tabBtn('random', <Shuffle size={20} />, 'Aleatório')}{tabBtn('cfg', <Cog size={20} />, 'Configurações')}{tabBtn('help', <HelpCircle size={20} />, 'Ajuda KP Tom')}
             </nav>
             {tab === 'queue' && (
               <div className="space-y-2">
@@ -708,6 +709,7 @@ export default function App() {
                 ))}
               </div>
             )}
+            {tab === 'random' && <RandomLibraryPanel />}
             {tab === 'cfg' && (
               <div className="space-y-3 text-sm">
                 <label className="flex items-center justify-between">Tempo entre músicas
