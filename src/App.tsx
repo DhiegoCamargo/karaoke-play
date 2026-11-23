@@ -6,6 +6,7 @@ import RoomPanel from './RoomPanel'
 import { RoomError, roomRequest, type QueueState, type RoomOwner } from './room'
 import { KpTomBridge, type KpTomStatus, type KpTomState } from './kpTomBridge'
 import RandomLibraryPanel from './RandomLibraryPanel'
+import { RANDOM_LIBRARY_KEY, activeRandomSongs, normalizeRandomLibraryState, type RandomLibraryState } from './randomLibrary'
 
 type Phase = 'IDLE' | 'LOADING' | 'PLAYING' | 'PAUSED' | 'SCORING' | 'COUNTDOWN' | 'AUTOPLAY_BLOCKED' | 'ERROR'
 type QueueResult = Result & { source?: Song['source']; fileName?: string }
@@ -140,6 +141,8 @@ export default function App() {
   const [note, setNote] = useState('')
   const [playbackError, setPlaybackError] = useState('')
   const [party, setParty] = useState(false)
+  const [randomMode, setRandomMode] = useState(false)
+  const [randomBusy, setRandomBusy] = useState(false)
   const [pending, setPending] = useState<{ result: QueueResult; file?: File } | null>(null)
   const lastTerm = useRef('') // consulta efetiva da última pesquisa: "Mais resultados" usa esta, não o campo de texto
   const searchSeq = useRef(0) // descarta respostas de pesquisas ultrapassadas
@@ -167,6 +170,9 @@ export default function App() {
   const finishRef = useRef(() => {})
   const startRef = useRef(() => {})
   const failRef = useRef((_message: string) => {})
+  const randomModeRef = useRef(false)
+  const randomPlayedRef = useRef(new Set<string>())
+  const startRandomRef = useRef(() => {})
 
   const stopPresentation = () => {
     activeSong.current = null
@@ -195,6 +201,11 @@ export default function App() {
         cursor = reply.cursor
         setSyncMessage('')
         if (reply.songs.length) {
+          if (randomModeRef.current) {
+            randomModeRef.current = false
+            setRandomMode(false)
+            setNote('Novo pedido recebido. O modo aleatório foi encerrado para dar prioridade à fila.')
+          }
           setQueueState(previous => {
             const known = new Set(previous.songs.map(song => song.id))
             const incoming = reply.songs
@@ -224,6 +235,7 @@ export default function App() {
   useEffect(() => save('kp:history', history), [history])
   useEffect(() => save('kp:favorites', favorites), [favorites])
   useEffect(() => save('kp:singer', singer), [singer])
+  useEffect(() => { randomModeRef.current = randomMode }, [randomMode])
 
   useEffect(() => {
     if (yt.current || !vid.current) return // adaptadores criados uma única vez (também no StrictMode)
@@ -291,6 +303,69 @@ export default function App() {
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
     return true
   }
+  const startRandomTrack = async () => {
+    if (!randomModeRef.current || queueRef.current.length || randomBusy) return
+    if (['LOADING', 'PLAYING', 'PAUSED', 'COUNTDOWN', 'SCORING'].includes(phaseRef.current)) return
+    const state = normalizeRandomLibraryState(load<RandomLibraryState | null>(RANDOM_LIBRARY_KEY, null))
+    let pool = activeRandomSongs(state)
+    if (!pool.length) {
+      randomModeRef.current = false
+      setRandomMode(false)
+      setNote('Ative pelo menos uma música na biblioteca do Modo Aleatório.')
+      return
+    }
+    let available = pool.filter(item => !randomPlayedRef.current.has(item.id))
+    if (!available.length) {
+      randomPlayedRef.current.clear()
+      available = pool
+    }
+    const candidate = available[Math.floor(Math.random() * available.length)]
+    const built = buildTerm(`${candidate.title} ${candidate.artist}`, true)
+    if ('tooLong' in built) return
+    setRandomBusy(true)
+    setNote(`Procurando: ${candidate.title} — ${candidate.artist}…`)
+    try {
+      const found = await searchYT(built.term)
+      if (!randomModeRef.current || queueRef.current.length) return
+      const result = found.items[0]
+      if (!result) throw new Error('Nenhuma versão de karaokê encontrada.')
+      randomPlayedRef.current.add(candidate.id)
+      const song: Song = {
+        ...result,
+        id: crypto.randomUUID(),
+        singer: 'Modo Aleatório',
+        source: 'youtube',
+        random: true,
+      }
+      if (!play(song)) throw new Error('O player ainda não está pronto.')
+      setNote(`Modo aleatório: ${candidate.genreName} · ${candidate.title}`)
+    } catch (error) {
+      randomModeRef.current = false
+      setRandomMode(false)
+      setNote(`Modo aleatório pausado: ${(error as Error).message}`)
+    } finally {
+      setRandomBusy(false)
+    }
+  }
+  startRandomRef.current = () => { void startRandomTrack() }
+
+  const startRandomMode = () => {
+    if (queueRef.current.length) {
+      setNote('A fila tem músicas de convidados. O modo aleatório só inicia quando ela estiver vazia.')
+      return
+    }
+    randomModeRef.current = true
+    setRandomMode(true)
+    if (!activeSong.current && phaseRef.current === 'IDLE') void startRandomTrack()
+    else setNote('Modo aleatório ativado. Ele assume quando a apresentação atual terminar e a fila estiver vazia.')
+  }
+
+  const stopRandomMode = () => {
+    randomModeRef.current = false
+    setRandomMode(false)
+    setNote('Modo aleatório encerrado. A música atual pode terminar normalmente.')
+  }
+
   startRef.current = () => {
     const [n] = queueRef.current
     if (!n) { setCurrent(null); setPhase('IDLE'); return }
@@ -302,6 +377,9 @@ export default function App() {
       setLeft(setRef.current.countdown)
       setPaused(false)
       setPhase('COUNTDOWN')
+    } else if (!queueRef.current.length && randomModeRef.current) {
+      setPhase('IDLE')
+      setTimeout(() => startRandomRef.current(), 700)
     } else setPhase('IDLE')
   }
   const skip = () => {
@@ -319,6 +397,11 @@ export default function App() {
     const completed = activeSong.current
     if (!completed) return
     stopPresentation()
+    if (completed.random) {
+      setScore(null)
+      advance()
+      return
+    }
     const s = setRef.current
     const sc = s.scoring ? rollScore(s.min, s.max) : null
     setScore(sc)
@@ -376,6 +459,10 @@ export default function App() {
       : [result, ...previous],
   )
   const add = (r: QueueResult, name: string, file?: File) => {
+    if (randomModeRef.current) {
+      randomModeRef.current = false
+      setRandomMode(false)
+    }
     if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
     if ([...queue, ...(activeSong.current ? [activeSong.current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
     const s: Song = { ...r, id: crypto.randomUUID(), singer: name }
@@ -709,7 +796,7 @@ export default function App() {
                 ))}
               </div>
             )}
-            {tab === 'random' && <RandomLibraryPanel />}
+            {tab === 'random' && <RandomLibraryPanel active={randomMode} busy={randomBusy} onStart={startRandomMode} onStop={stopRandomMode} />}
             {tab === 'cfg' && (
               <div className="space-y-3 text-sm">
                 <label className="flex items-center justify-between">Tempo entre músicas
