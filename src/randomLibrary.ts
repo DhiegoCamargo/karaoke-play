@@ -179,3 +179,32 @@ export function defaultRandomLibraryState(): RandomLibraryState {
     ])),
   }
 }
+
+
+export const RANDOM_LIBRARY_KEY = 'kp:random-library-v1'
+
+export function normalizeRandomLibraryState(saved?: RandomLibraryState | null): RandomLibraryState {
+  const base = defaultRandomLibraryState()
+  if (!saved?.genres) return base
+  for (const genre of RANDOM_LIBRARY) {
+    const old = saved.genres[genre.id]
+    if (!old) continue
+    base.genres[genre.id].enabled = old.enabled !== false
+    for (const item of genre.songs) {
+      if (old.songs && item.id in old.songs) base.genres[genre.id].songs[item.id] = old.songs[item.id] !== false
+    }
+  }
+  return base
+}
+
+export function activeRandomSongs(state: RandomLibraryState): Array<RandomSong & { genreId: string; genreName: string }> {
+  const out: Array<RandomSong & { genreId: string; genreName: string }> = []
+  for (const genre of RANDOM_LIBRARY) {
+    const cfg = state.genres[genre.id]
+    if (!cfg?.enabled) continue
+    for (const item of genre.songs) {
+      if (cfg.songs[item.id] !== false) out.push({ ...item, genreId: genre.id, genreName: genre.name })
+    }
+  }
+  return out
+}
