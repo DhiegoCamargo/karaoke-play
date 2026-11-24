@@ -143,6 +143,8 @@ export default function App() {
   const [party, setParty] = useState(false)
   const [randomMode, setRandomMode] = useState(false)
   const [randomBusy, setRandomBusy] = useState(false)
+  const [randomCountdown, setRandomCountdown] = useState(false)
+  const [randomUpcoming, setRandomUpcoming] = useState<Array<{ id: string; title: string; artist: string; genreName: string }>>([])
   const [pending, setPending] = useState<{ result: QueueResult; file?: File } | null>(null)
   const lastTerm = useRef('') // consulta efetiva da última pesquisa: "Mais resultados" usa esta, não o campo de texto
   const searchSeq = useRef(0) // descarta respostas de pesquisas ultrapassadas
@@ -172,6 +174,7 @@ export default function App() {
   const failRef = useRef((_message: string) => {})
   const randomModeRef = useRef(false)
   const randomPlayedRef = useRef(new Set<string>())
+  const randomUpcomingRef = useRef<Array<{ id: string; title: string; artist: string; genreName: string }>>([])
   const startRandomRef = useRef(() => {})
 
   const stopPresentation = () => {
@@ -204,6 +207,9 @@ export default function App() {
           if (randomModeRef.current) {
             randomModeRef.current = false
             setRandomMode(false)
+            setRandomCountdown(false)
+            setRandomUpcoming([])
+            randomUpcomingRef.current = []
             setNote('Novo pedido recebido. O modo aleatório foi encerrado para dar prioridade à fila.')
           }
           setQueueState(previous => {
@@ -303,23 +309,40 @@ export default function App() {
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
     return true
   }
-  const startRandomTrack = async () => {
-    if (!randomModeRef.current || queueRef.current.length || randomBusy) return
-    if (['LOADING', 'PLAYING', 'PAUSED', 'COUNTDOWN', 'SCORING'].includes(phaseRef.current)) return
+  const refillRandomUpcoming = () => {
     const state = normalizeRandomLibraryState(load<RandomLibraryState | null>(RANDOM_LIBRARY_KEY, null))
     let pool = activeRandomSongs(state)
     if (!pool.length) {
-      randomModeRef.current = false
-      setRandomMode(false)
-      setNote('Ative pelo menos uma música na biblioteca do Modo Aleatório.')
-      return
+      randomUpcomingRef.current = []
+      setRandomUpcoming([])
+      return []
     }
     let available = pool.filter(item => !randomPlayedRef.current.has(item.id))
     if (!available.length) {
       randomPlayedRef.current.clear()
       available = pool
     }
-    const candidate = available[Math.floor(Math.random() * available.length)]
+    const shuffled = [...available].sort(() => Math.random() - 0.5)
+    const next = shuffled.slice(0, 6).map(({ id, title, artist, genreName }) => ({ id, title, artist, genreName }))
+    randomUpcomingRef.current = next
+    setRandomUpcoming(next)
+    return next
+  }
+
+  const startRandomTrack = async () => {
+    if (!randomModeRef.current || queueRef.current.length || randomBusy) return
+    if (['LOADING', 'PLAYING', 'PAUSED', 'COUNTDOWN', 'SCORING'].includes(phaseRef.current)) return
+    let upcoming = randomUpcomingRef.current
+    if (!upcoming.length) upcoming = refillRandomUpcoming()
+    if (!upcoming.length) {
+      randomModeRef.current = false
+      setRandomMode(false)
+      setNote('Ative pelo menos uma música na biblioteca do Modo Aleatório.')
+      return
+    }
+    const candidate = upcoming[0]
+    randomUpcomingRef.current = upcoming.slice(1)
+    setRandomUpcoming(upcoming.slice(1))
     const built = buildTerm(`${candidate.title} ${candidate.artist}`, true)
     if ('tooLong' in built) return
     setRandomBusy(true)
@@ -330,6 +353,7 @@ export default function App() {
       const result = found.items[0]
       if (!result) throw new Error('Nenhuma versão de karaokê encontrada.')
       randomPlayedRef.current.add(candidate.id)
+      if (randomUpcomingRef.current.length < 3) refillRandomUpcoming()
       const song: Song = {
         ...result,
         id: crypto.randomUUID(),
@@ -356,6 +380,8 @@ export default function App() {
     }
     randomModeRef.current = true
     setRandomMode(true)
+    setRandomCountdown(false)
+    refillRandomUpcoming()
     if (!activeSong.current && phaseRef.current === 'IDLE') void startRandomTrack()
     else setNote('Modo aleatório ativado. Ele assume quando a apresentação atual terminar e a fila estiver vazia.')
   }
@@ -363,6 +389,9 @@ export default function App() {
   const stopRandomMode = () => {
     randomModeRef.current = false
     setRandomMode(false)
+    setRandomCountdown(false)
+    setRandomUpcoming([])
+    randomUpcomingRef.current = []
     setNote('Modo aleatório encerrado. A música atual pode terminar normalmente.')
   }
 
@@ -378,8 +407,10 @@ export default function App() {
       setPaused(false)
       setPhase('COUNTDOWN')
     } else if (!queueRef.current.length && randomModeRef.current) {
-      setPhase('IDLE')
-      setTimeout(() => startRandomRef.current(), 700)
+      setLeft(10)
+      setPaused(false)
+      setRandomCountdown(true)
+      setPhase('COUNTDOWN')
     } else setPhase('IDLE')
   }
   const skip = () => {
@@ -415,15 +446,32 @@ export default function App() {
     const t = setTimeout(advance, SCORE_READ_MS)
     return () => clearTimeout(t)
   }, [phase])
-  // COUNTDOWN: um único timer por vez
+  // COUNTDOWN: um único timer por vez; no modo aleatório há sempre 10 s entre músicas.
   useEffect(() => {
     if (phase !== 'COUNTDOWN') return
+    if (randomCountdown) {
+      if (queue.length) {
+        setRandomCountdown(false)
+        setLeft(settings.countdown)
+        return
+      }
+      if (!randomModeRef.current) { setRandomCountdown(false); setPhase('IDLE'); return }
+      if (paused) return
+      if (left <= 0) {
+        setRandomCountdown(false)
+        setPhase('IDLE')
+        setTimeout(() => startRandomRef.current(), 0)
+        return
+      }
+      const t = setTimeout(() => setLeft(l => l - 1), 1000)
+      return () => clearTimeout(t)
+    }
     if (!queue.length || !settings.autoplay) { setPhase('IDLE'); return }
     if (paused) return
     if (left <= 0) { startRef.current(); return }
     const t = setTimeout(() => setLeft(l => l - 1), 1000)
     return () => clearTimeout(t)
-  }, [phase, paused, left, queue.length, settings.autoplay])
+  }, [phase, paused, left, queue.length, settings.autoplay, settings.countdown, randomCountdown])
 
   const doSearch = async (query: string, next?: string) => {
     const raw = query.trim()
@@ -519,6 +567,20 @@ export default function App() {
         {score != null && <Counter n={score} anim={settings.anim} />}
         {score != null && settings.cheer && <p className="text-lg italic">“{msg}”</p>}
         {nextUp && <p className="text-sm text-white/60">Próximo: {nextUp.singer} — {nextUp.title}</p>}
+      </Ov>
+    ) : phase === 'COUNTDOWN' && randomCountdown && randomMode ? (
+      <Ov className="kp-random-invite">
+        <p className="text-sm font-bold text-violet-300 sm:text-xl">QUEM VAI CANTAR?</p>
+        <p className="max-w-2xl text-xl font-bold sm:text-3xl">Escolha uma música e venha para o palco!</p>
+        <p className="max-w-xl text-base text-white/80 sm:text-xl">Escaneie o QR Code e selecione a música que você quer cantar.</p>
+        <div className="text-8xl font-black text-fuchsia-400 drop-shadow-[0_0_24px_#d946ef] sm:text-9xl" aria-live="polite">{left}</div>
+        <p className="text-sm text-white/60">Próxima música aleatória em {left} s</p>
+        <div className="h-2 w-64 overflow-hidden rounded bg-white/10"><div className="h-full bg-fuchsia-500 transition-all duration-1000 ease-linear" style={{ width: `${(left / 10) * 100}%` }} /></div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <button className={primary} onClick={() => { setLeft(0); setPaused(false) }}>Tocar aleatória agora</button>
+          <button className={btn} onClick={() => setPaused(p => !p)}>{paused ? 'Continuar' : 'Pausar'}</button>
+          <button className={btn} onClick={stopRandomMode}>Encerrar modo aleatório</button>
+        </div>
       </Ov>
     ) : phase === 'COUNTDOWN' && nextUp ? (
       <Ov>
@@ -732,9 +794,9 @@ export default function App() {
               <div className="kp-tv-card-head">
                 <div>
                   <span className="kp-tv-kicker">A SEGUIR</span>
-                  <h3>Próximos cantores</h3>
+                  <h3>{queue.length ? 'Próximos cantores' : randomMode ? 'Próximas músicas' : 'Próximos cantores'}</h3>
                 </div>
-                <span className="kp-tv-count">{queue.length} na fila</span>
+                <span className="kp-tv-count">{queue.length ? `${queue.length} na fila` : randomMode ? 'Modo aleatório' : '0 na fila'}</span>
               </div>
               <div className="kp-tv-next-list">
                 {queue.length ? queue.slice(0, 5).map((song, index) => (
@@ -745,7 +807,15 @@ export default function App() {
                       <p className="truncate text-sm text-white/65">{song.title}</p>
                     </div>
                   </div>
-                )) : <div className="kp-tv-empty"><p>Nenhuma música na fila.</p></div>}
+                )) : randomMode && randomUpcoming.length ? randomUpcoming.slice(0, 5).map((song, index) => (
+                  <div key={song.id} className="kp-tv-next-item">
+                    <span className="kp-tv-position">{index + 1}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold">{song.title}</p>
+                      <p className="truncate text-sm text-white/65">{song.artist} · {song.genreName}</p>
+                    </div>
+                  </div>
+                )) : <div className="kp-tv-empty"><p>{randomMode ? 'Preparando próximas músicas…' : 'Nenhuma música na fila.'}</p></div>}
               </div>
             </section>
           </aside>
