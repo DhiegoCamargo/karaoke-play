@@ -92,9 +92,11 @@ export default async function handler(req: any, res: any) {
           typeof requestId !== 'string' || !requestPattern.test(requestId)) {
         return res.status(400).json({ error: 'invalid' })
       }
+      const requestedPitch = Number(song?.pitch ?? 0)
+      const pitch = Number.isInteger(requestedPitch) ? Math.max(-12, Math.min(12, requestedPitch)) : 0
       argument = JSON.stringify({
         id: requestId, videoId, singer, title, channel: field(song.channel, 120),
-        source: 'youtube', remote: true, createdAt: Date.now(),
+        source: 'youtube', remote: true, createdAt: Date.now(), pitch,
         thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
       })
     }
