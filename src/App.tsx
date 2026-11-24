@@ -309,21 +309,35 @@ export default function App() {
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
     return true
   }
-  const refillRandomUpcoming = () => {
+  const refillRandomUpcoming = (target = 6) => {
     const state = normalizeRandomLibraryState(load<RandomLibraryState | null>(RANDOM_LIBRARY_KEY, null))
-    let pool = activeRandomSongs(state)
+    const pool = activeRandomSongs(state)
     if (!pool.length) {
       randomUpcomingRef.current = []
       setRandomUpcoming([])
       return []
     }
-    let available = pool.filter(item => !randomPlayedRef.current.has(item.id))
-    if (!available.length) {
-      randomPlayedRef.current.clear()
-      available = pool
+
+    const next = [...randomUpcomingRef.current]
+    const queued = new Set(next.map(item => item.id))
+    let guard = 0
+
+    while (next.length < target && guard < pool.length * 3) {
+      guard++
+      let available = pool.filter(item => !randomPlayedRef.current.has(item.id) && !queued.has(item.id))
+      if (!available.length) {
+        // Reabre o ciclo sem apagar as músicas que já estão prometidas na lista "A seguir".
+        randomPlayedRef.current.clear()
+        available = pool.filter(item => !queued.has(item.id))
+      }
+      if (!available.length) break
+
+      const chosen = available[Math.floor(Math.random() * available.length)]
+      const preview = { id: chosen.id, title: chosen.title, artist: chosen.artist, genreName: chosen.genreName }
+      next.push(preview)
+      queued.add(chosen.id)
     }
-    const shuffled = [...available].sort(() => Math.random() - 0.5)
-    const next = shuffled.slice(0, 6).map(({ id, title, artist, genreName }) => ({ id, title, artist, genreName }))
+
     randomUpcomingRef.current = next
     setRandomUpcoming(next)
     return next
@@ -353,7 +367,8 @@ export default function App() {
       const result = found.items[0]
       if (!result) throw new Error('Nenhuma versão de karaokê encontrada.')
       randomPlayedRef.current.add(candidate.id)
-      if (randomUpcomingRef.current.length < 3) refillRandomUpcoming()
+      // Mantém sempre cinco próximas músicas visíveis: as quatro restantes sobem e apenas uma nova entra na 5ª posição.
+      refillRandomUpcoming(5)
       const song: Song = {
         ...result,
         id: crypto.randomUUID(),
