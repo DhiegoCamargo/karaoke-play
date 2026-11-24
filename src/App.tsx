@@ -144,6 +144,7 @@ export default function App() {
   const [randomMode, setRandomMode] = useState(false)
   const [randomBusy, setRandomBusy] = useState(false)
   const [randomCountdown, setRandomCountdown] = useState(false)
+  const [randomReturnDelay, setRandomReturnDelay] = useState(false)
   const [randomUpcoming, setRandomUpcoming] = useState<Array<{ id: string; title: string; artist: string; genreName: string }>>([])
   const [pending, setPending] = useState<{ result: QueueResult; file?: File } | null>(null)
   const lastTerm = useRef('') // consulta efetiva da última pesquisa: "Mais resultados" usa esta, não o campo de texto
@@ -175,6 +176,7 @@ export default function App() {
   const randomModeRef = useRef(false)
   const randomPlayedRef = useRef(new Set<string>())
   const randomUpcomingRef = useRef<Array<{ id: string; title: string; artist: string; genreName: string }>>([])
+  const randomReturnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const startRandomRef = useRef(() => {})
 
   const stopPresentation = () => {
@@ -205,12 +207,9 @@ export default function App() {
         setSyncMessage('')
         if (reply.songs.length) {
           if (randomModeRef.current) {
-            randomModeRef.current = false
-            setRandomMode(false)
+            cancelRandomReturn()
             setRandomCountdown(false)
-            setRandomUpcoming([])
-            randomUpcomingRef.current = []
-            setNote('Novo pedido recebido. O modo aleatório foi encerrado para dar prioridade à fila.')
+            setNote('Novo pedido recebido. O modo aleatório ficará em espera enquanto houver músicas de usuários.')
           }
           setQueueState(previous => {
             const known = new Set(previous.songs.map(song => song.id))
@@ -242,6 +241,12 @@ export default function App() {
   useEffect(() => save('kp:favorites', favorites), [favorites])
   useEffect(() => save('kp:singer', singer), [singer])
   useEffect(() => { randomModeRef.current = randomMode }, [randomMode])
+  useEffect(() => {
+    if (queue.length) cancelRandomReturn()
+  }, [queue.length])
+  useEffect(() => () => {
+    if (randomReturnTimerRef.current) clearTimeout(randomReturnTimerRef.current)
+  }, [])
 
   useEffect(() => {
     if (yt.current || !vid.current) return // adaptadores criados uma única vez (também no StrictMode)
@@ -388,6 +393,30 @@ export default function App() {
   }
   startRandomRef.current = () => { void startRandomTrack() }
 
+  const cancelRandomReturn = () => {
+    if (randomReturnTimerRef.current) {
+      clearTimeout(randomReturnTimerRef.current)
+      randomReturnTimerRef.current = null
+    }
+    setRandomReturnDelay(false)
+  }
+
+  const scheduleRandomReturn = () => {
+    if (!randomModeRef.current || queueRef.current.length) return
+    cancelRandomReturn()
+    setRandomReturnDelay(true)
+    setNote('Fila livre. Se ninguém escolher outra música, o modo aleatório volta em 15 segundos.')
+    randomReturnTimerRef.current = setTimeout(() => {
+      randomReturnTimerRef.current = null
+      setRandomReturnDelay(false)
+      if (!randomModeRef.current || queueRef.current.length || activeSong.current) return
+      setLeft(10)
+      setPaused(false)
+      setRandomCountdown(true)
+      setPhase('COUNTDOWN')
+    }, 15000)
+  }
+
   const startRandomMode = () => {
     if (queueRef.current.length) {
       setNote('A fila tem músicas de convidados. O modo aleatório só inicia quando ela estiver vazia.')
@@ -395,6 +424,7 @@ export default function App() {
     }
     randomModeRef.current = true
     setRandomMode(true)
+    cancelRandomReturn()
     setRandomCountdown(false)
     refillRandomUpcoming()
     if (!activeSong.current && phaseRef.current === 'IDLE') void startRandomTrack()
@@ -404,6 +434,7 @@ export default function App() {
   const stopRandomMode = () => {
     randomModeRef.current = false
     setRandomMode(false)
+    cancelRandomReturn()
     setRandomCountdown(false)
     setRandomUpcoming([])
     randomUpcomingRef.current = []
@@ -416,16 +447,23 @@ export default function App() {
     if (play(n)) setQueue(songs => songs.filter(song => song.id !== n.id))
     else setPhase('IDLE')
   }
-  const advance = () => {
+  const advance = (fromRandom = false) => {
     if (queueRef.current.length && setRef.current.autoplay) {
+      cancelRandomReturn()
       setLeft(setRef.current.countdown)
       setPaused(false)
+      setRandomCountdown(false)
       setPhase('COUNTDOWN')
     } else if (!queueRef.current.length && randomModeRef.current) {
-      setLeft(10)
-      setPaused(false)
-      setRandomCountdown(true)
-      setPhase('COUNTDOWN')
+      if (fromRandom) {
+        setLeft(10)
+        setPaused(false)
+        setRandomCountdown(true)
+        setPhase('COUNTDOWN')
+      } else {
+        setPhase('IDLE')
+        scheduleRandomReturn()
+      }
     } else setPhase('IDLE')
   }
   const skip = () => {
@@ -445,7 +483,7 @@ export default function App() {
     stopPresentation()
     if (completed.random) {
       setScore(null)
-      advance()
+      advance(true)
       return
     }
     const s = setRef.current
@@ -523,8 +561,8 @@ export default function App() {
   )
   const add = (r: QueueResult, name: string, file?: File) => {
     if (randomModeRef.current) {
-      randomModeRef.current = false
-      setRandomMode(false)
+      cancelRandomReturn()
+      setRandomCountdown(false)
     }
     if (r.source === 'file' && !file) { setNote('Para repetir um arquivo local, selecione-o de novo em "MP4 local".'); return }
     if ([...queue, ...(activeSong.current ? [activeSong.current] : [])].some(s => s.videoId === r.videoId && s.singer === name)) { setNote('Essa música já está na fila para este cantor.'); return }
@@ -576,7 +614,13 @@ export default function App() {
   }
 
   const overlay =
-    phase === 'SCORING' ? (
+    phase === 'IDLE' && randomReturnDelay && randomMode && !queue.length ? (
+      <Ov className="kp-random-invite">
+        <p className="text-sm font-bold text-violet-300 sm:text-xl">A FILA ESTÁ LIVRE</p>
+        <p className="max-w-2xl text-xl font-bold sm:text-3xl">Quer cantar? Escolha sua música pelo QR Code!</p>
+        <p className="max-w-xl text-base text-white/80 sm:text-xl">Se ninguém fizer um novo pedido, o Modo Aleatório volta automaticamente.</p>
+      </Ov>
+    ) : phase === 'SCORING' ? (
       <Ov>
         <p className="text-xl text-violet-300 sm:text-3xl">{score != null ? `PARABÉNS, ${current?.singer.toUpperCase()}!` : 'APRESENTAÇÃO ENCERRADA'}</p>
         {score != null && <Counter n={score} anim={settings.anim} />}
@@ -811,7 +855,7 @@ export default function App() {
                   <span className="kp-tv-kicker">A SEGUIR</span>
                   <h3>{queue.length ? 'Próximos cantores' : randomMode ? 'Próximas músicas' : 'Próximos cantores'}</h3>
                 </div>
-                <span className="kp-tv-count">{queue.length ? `${queue.length} na fila` : randomMode ? 'Modo aleatório' : '0 na fila'}</span>
+                <span className="kp-tv-count">{queue.length ? `${queue.length} na fila` : randomReturnDelay ? 'Aguardando pedidos' : randomMode ? 'Modo aleatório' : '0 na fila'}</span>
               </div>
               <div className="kp-tv-next-list">
                 {queue.length ? queue.slice(0, 5).map((song, index) => (
