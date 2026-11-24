@@ -17,6 +17,7 @@ export default function Guest({ room }: { room: string }) {
   const [next, setNext] = useState<string>()
   const [searching, setSearching] = useState(false)
   const [selected, setSelected] = useState<Result | null>(null)
+  const [pitch, setPitch] = useState(0)
   const [sending, setSending] = useState(false)
   const term = useRef('')
   const searchId = useRef(0)
@@ -85,9 +86,10 @@ export default function Guest({ room }: { room: string }) {
     setSending(true)
     setStatus('')
     try {
-      await roomRequest('submit', { room, requestId: requestId.current, song: { ...selected, singer: profile } })
-      setStatus(`“${selected.title}” entrou na fila para ${profile}.`)
+      await roomRequest('submit', { room, requestId: requestId.current, song: { ...selected, singer: profile, pitch } })
+      setStatus(`“${selected.title}” entrou na fila para ${profile} no tom ${pitch > 0 ? '+' : ''}${pitch}.`)
       setSelected(null)
+      setPitch(0)
     } catch (error) {
       setStatus((error as Error).message)
       if (error instanceof RoomError && error.code === 'closed') setReady(false)
@@ -123,9 +125,23 @@ export default function Guest({ room }: { room: string }) {
             <form ref={orderForm} className="space-y-3 rounded-2xl border border-violet-500/60 bg-[#1b1040] p-4" onSubmit={event => { event.preventDefault(); void submit() }}>
               <p className="font-semibold">{selected.title}</p>
               <p className="text-sm text-violet-200">Cantor(a) <strong className="text-white">{profile}</strong></p>
+              <div className="rounded-xl bg-white/5 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold">Tom da música</p>
+                    <p className="text-xs text-violet-200">Escolha de −12 a +12 semitons. A velocidade permanece em 1,00×.</p>
+                  </div>
+                  <output aria-live="polite" className="min-w-12 text-center text-2xl font-black text-fuchsia-300">{pitch > 0 ? '+' : ''}{pitch}</output>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <button type="button" className="rounded-xl bg-white/10 px-4 py-3 text-lg font-bold disabled:opacity-40" disabled={pitch <= -12 || sending} onClick={() => setPitch(value => Math.max(-12, value - 1))}>−</button>
+                  <button type="button" className="rounded-xl bg-white/10 px-3 py-3 text-sm font-semibold disabled:opacity-40" disabled={pitch === 0 || sending} onClick={() => setPitch(0)}>Original</button>
+                  <button type="button" className="rounded-xl bg-white/10 px-4 py-3 text-lg font-bold disabled:opacity-40" disabled={pitch >= 12 || sending} onClick={() => setPitch(value => Math.min(12, value + 1))}>+</button>
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <button className={actionStyle} disabled={sending}>{sending ? 'Enviando…' : 'Adicionar à fila'}</button>
-                <button type="button" className="rounded-xl bg-white/10 px-4 py-3" disabled={sending} onClick={() => setSelected(null)}>Cancelar</button>
+                <button type="button" className="rounded-xl bg-white/10 px-4 py-3" disabled={sending} onClick={() => { setSelected(null); setPitch(0) }}>Cancelar</button>
               </div>
             </form>
           )}
@@ -137,6 +153,7 @@ export default function Guest({ room }: { room: string }) {
             {results.map(song => (
               <button key={song.videoId} type="button" disabled={sending} className="flex w-full items-center gap-3 rounded-xl bg-white/10 p-2 text-left hover:bg-white/20" onClick={() => {
                 setSelected(song)
+                setPitch(0)
                 setStatus('')
                 setQuery('')
                 setResults([])
