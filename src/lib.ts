@@ -5,7 +5,7 @@ export const genres = [
 
 export type Result = { videoId: string; title: string; channel: string; thumb: string }
 export type Source = 'youtube' | 'file' | 'library'
-export type Song = Result & { id: string; singer: string; source?: Source; fileName?: string; url?: string; remote?: boolean; random?: boolean }
+export type Song = Result & { id: string; singer: string; source?: Source; fileName?: string; url?: string; remote?: boolean; random?: boolean; pitch?: number }
 export type HistoryItem = Song & { score: number | null; at: number }
 export type Settings = { countdown: number; min: number; max: number; scoring: boolean; autoplay: boolean; anim: boolean; cheer: boolean }
 export const DEFAULTS: Settings = { countdown: 10, min: 70, max: 100, scoring: true, autoplay: true, anim: true, cheer: true }
