@@ -308,8 +308,10 @@ export default function App() {
     activeSong.current = s
     player.current = pb
     setSource(kind); setCurrent(s); setScore(null); setNote(''); setPhase('LOADING')
-    if (!keep) { toneRef.current = 0; setTone(0) }
-    pb.setPitch(keep ? tone : 0)
+    const requestedPitch = typeof s.pitch === 'number' ? Math.max(-12, Math.min(12, Math.round(s.pitch))) : (keep ? tone : 0)
+    toneRef.current = requestedPitch
+    setTone(requestedPitch)
+    pb.setPitch(requestedPitch)
     pb.load(s, kind === 'file' ? files.current.get(s.id) : s.url)
     setTimeout(() => { if (tok.current === my && phaseRef.current === 'LOADING') setPhase('AUTOPLAY_BLOCKED') }, 6000)
     return true
@@ -863,7 +865,7 @@ export default function App() {
                     <span className="kp-tv-position">{index + 1}</span>
                     <div className="min-w-0">
                       <p className="truncate font-bold">{song.singer}</p>
-                      <p className="truncate text-sm text-white/65">{song.title}</p>
+                      <p className="truncate text-sm text-white/65">{song.title}{typeof song.pitch === 'number' && song.pitch !== 0 ? ` · Tom ${song.pitch > 0 ? '+' : ''}${song.pitch}` : ''}</p>
                     </div>
                   </div>
                 )) : randomMode && randomUpcoming.length ? randomUpcoming.slice(0, 5).map((song, index) => (
@@ -892,7 +894,7 @@ export default function App() {
                 {queue.map((s, i) => (
                   <div key={s.id} className={`kp-queue-card ${row}`}>
                     <img src={s.thumb} alt="" className="h-12 w-20 rounded object-cover" />
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{i + 1}. {s.title}</p><p className="truncate text-xs text-violet-300">{s.singer}</p></div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{i + 1}. {s.title}</p><p className="truncate text-xs text-violet-300">{s.singer}{typeof s.pitch === 'number' && s.pitch !== 0 ? ` · Tom ${s.pitch > 0 ? '+' : ''}${s.pitch}` : ''}</p></div>
                     {current && <button aria-label="Tocar agora" title="Tocar agora" className="p-1" onClick={() => playNow(i)}><Play size={18} /></button>}
                     <button aria-label="Subir" className="p-1" onClick={() => move(i, -1)}><ArrowUp size={18} /></button>
                     <button aria-label="Descer" className="p-1" onClick={() => move(i, 1)}><ArrowDown size={18} /></button>
